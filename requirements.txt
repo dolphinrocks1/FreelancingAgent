@@ -1,2 +1,4 @@
 pandas
 streamlit
+duckduckgo_search
+beautifulsoup4
