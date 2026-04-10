@@ -30,6 +30,6 @@ jobs:
         run: |
           git config --global user.name "Scout-Bot"
           git config --global user.email "bot@github.com"
-          git add data/jobs.csv
-          git commit -m "Auto-update: Found new SIEM/SOAR leads" || exit 0
-          git push
+          git add data/jobs.csv || echo "File not found, skipping add"
+          git commit -m "Auto-update: Found new SIEM/SOAR leads" || echo "No changes to commit"
+          git push || echo "No changes to push"
