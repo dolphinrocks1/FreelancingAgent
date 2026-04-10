@@ -35,11 +35,25 @@ def get_ai_analysis(title, snippet):
         return {"score": 50, "is_genuine": True, "bid": "I am interested in this SIEM/SOAR role."}
 
 def fetch_cyber_leads():
-    """Finds SIEM/SOAR jobs using DuckDuckGo."""
+    """Finds a wider range of SOC/SIEM jobs across multiple platforms."""
     queries = [
-        'site:upwork.com "SIEM" "Remote"',
-        'site:upwork.com "SOAR" "Remote"',
-        'site:freelancer.com "Splunk" "Sentinel"'
+        # Platform Specific Broad Search
+        'site:upwork.com ("SIEM" OR "SOAR" OR "SOC") "Remote"',
+        'site:freelancer.com ("Sentinel" OR "Splunk" OR "QRadar")',
+        'site:guru.com ("Cyber Security" OR "Information Security")',
+        
+        # Skill-Based Niche Search
+        'site:upwork.com "Splunk Engineer" OR "Splunk Admin"',
+        'site:upwork.com "Microsoft Sentinel" OR "Azure Sentinel"',
+        'site:upwork.com "Wazuh" OR "ELK Stack" OR "OpenSearch"',
+        
+        # Role-Based Search
+        'site:upwork.com "Security Operations Center" OR "SOC Analyst"',
+        'site:upwork.com "Detection Engineer" OR "Threat Hunting"',
+        
+        # International / Generic Freelance
+        'site:peopleperhour.com "SIEM" OR "Security"',
+        'site:remoteok.com "Security Engineer"'
     ]
     found_jobs = []
     
