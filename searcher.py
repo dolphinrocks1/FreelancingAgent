@@ -1,55 +1,70 @@
-import pandas as pd
 import os
+import time
+import pandas as pd
 from datetime import datetime
+from duckduckgo_search import DDGS
 
 # 1. Configuration
 CSV_FILE = 'data/jobs.csv'
 
-def save_jobs(new_jobs_list):
-    """
-    Saves a list of job dictionaries to CSV, preventing duplicates based on URL.
-    """
-    # Create the data directory if it doesn't exist for the GitHub Action
+def fetch_cyber_leads():
+    """Finds SIEM/SOAR jobs using DuckDuckGo as a proxy."""
+    queries = [
+        'site:upwork.com "SIEM" "Remote"',
+        'site:upwork.com "SOAR" "Remote"',
+        'site:freelancer.com "Splunk" "Sentinel"'
+    ]
+    found_jobs = []
+    
+    with DDGS() as ddgs:
+        for query in queries:
+            try:
+                # 'timelimit=d' keeps it to the last 24 hours for max freshness
+                results = ddgs.text(query, timelimit='d', max_results=5)
+                for r in results:
+                    if any(path in r['href'] for path in ["/jobs/", "/projects/"]):
+                        found_jobs.append({
+                            "project_title": r['title'].split(" - ")[0],
+                            "source": r['href'],
+                            "snippet": r['body'],
+                            "found_at": datetime.now().strftime("%Y-%m-%d %H:%M")
+                        })
+                time.sleep(2) # Prevent IP blocks
+            except Exception as e:
+                print(f"Error fetching {query}: {e}")
+    return found_jobs
+
+def process_and_save(new_jobs):
+    """Filters duplicates and saves only new leads."""
+    if not new_jobs:
+        print("No jobs found in this crawl.")
+        return
+
     os.makedirs('data', exist_ok=True)
-    
-    # Convert new findings to a DataFrame
-    new_df = pd.DataFrame(new_jobs_list)
-    
+    new_df = pd.DataFrame(new_jobs)
+
     if os.path.exists(CSV_FILE):
-        # Load existing data
         existing_df = pd.read_csv(CSV_FILE)
-        
-        # Filter: Only keep jobs where the 'source' URL isn't already in our CSV
-        # This is the "De-duplication" magic line
+        # Unique ID check via the 'source' URL
         fresh_leads = new_df[~new_df['source'].isin(existing_df['source'])]
         
         if not fresh_leads.empty:
-            # Append new leads to the end of the existing file
+            # We'll add a 'weightage_score' column for the UI to read
+            # (In the next step, we'll replace this static 70 with real AI scoring)
+            fresh_leads['weightage_score'] = 70 
+            fresh_leads['is_genuine'] = True
+            
             updated_df = pd.concat([existing_df, fresh_leads], ignore_index=True)
             updated_df.to_csv(CSV_FILE, index=False)
-            print(f"✅ Added {len(fresh_leads)} new unique leads.")
+            print(f"✅ Saved {len(fresh_leads)} new leads.")
         else:
-            print("p No new leads found this hour.")
+            print("p All found jobs are already in the database.")
     else:
-        # First time running? Create the file from scratch
+        new_df['weightage_score'] = 70
+        new_df['is_genuine'] = True
         new_df.to_csv(CSV_FILE, index=False)
-        print(f"🚀 Initialized database with {len(new_df)} leads.")
-
-# --- MOCK AGENT LOGIC (Replace this with your actual scraping/LLM code) ---
-def run_agent():
-    # In the real version, this would be your DuckDuckGo + LLM logic
-    mock_results = [
-        {
-            "project_title": "Sentinel Specialist Needed",
-            "source": "https://upwork.com/jobs/123", # Unique ID
-            "weightage_score": 95,
-            "tech": "Sentinel",
-            "is_genuine": True,
-            "bid_draft": "I can optimize your Sentinel KQL...",
-            "found_at": datetime.now().strftime("%Y-%m-%d %H:%M")
-        }
-    ]
-    save_jobs(mock_results)
+        print("🚀 Initialized job database.")
 
 if __name__ == "__main__":
-    run_agent()
+    leads = fetch_cyber_leads()
+    process_and_save(leads)
