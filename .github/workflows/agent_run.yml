@@ -1,0 +1,35 @@
+name: Hourly SIEM/SOAR Scout
+
+on:
+  schedule:
+    - cron: '0 * * * *'  # Runs at the start of every hour
+  workflow_dispatch:      # Allows you to run it manually for testing
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Run Searcher Agent
+        run: python searcher.py
+        env:
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+
+      - name: Commit and Push Results
+        run: |
+          git config --global user.name "Scout-Bot"
+          git config --global user.email "bot@github.com"
+          git add data/jobs.csv
+          git commit -m "Auto-update: Found new SIEM/SOAR leads" || exit 0
+          git push
