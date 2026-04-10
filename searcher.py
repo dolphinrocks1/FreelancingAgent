@@ -71,6 +71,7 @@ def fetch_cyber_leads():
                 time.sleep(1) 
             except Exception as e:
                 print(f"Search Error: {e}")
+            time.sleep(3)
     return found_jobs
 
 def process_and_save(raw_leads):
