@@ -1,62 +1,97 @@
 import streamlit as st
 import pandas as pd
+import os
+import streamlit.components.v1 as components
 
-# Page Config for Mobile Responsiveness
-st.set_page_config(page_title="SIEM/SOAR Scout", layout="wide")
+# --- PAGE CONFIG ---
+st.set_page_config(page_title="SIEM/SOAR Scout", layout="wide", initial_sidebar_state="collapsed")
 
-st.title("🛡️ Cyber Security Freelance Scout")
-st.subheader("Real-time SIEM & SOAR Opportunities")
+# --- CUSTOM FUNCTIONS ---
+def copy_button(text, index):
+    """Creates a custom button that copies text to the clipboard using JS."""
+    # We use the index to ensure each button on the page has a unique ID
+    html_code = f"""
+        <button onclick="navigator.clipboard.writeText(`{text}`)" 
+                style="padding: 8px; border-radius: 5px; background-color: #007bff; color: white; border: none; cursor: pointer; width: 100%; font-weight: bold;">
+            📋 Copy Bid to Clipboard
+        </button>
+    """
+    components.html(html_code, height=45)
 
-# --- MOCK DATA (This is where your Agent's JSON output will go) ---
-data = [
-    {
-        "title": "Microsoft Sentinel Rule Logic Optimization",
-        "tech": "Sentinel",
-        "score": 92,
-        "is_genuine": True,
-        "location": "Remote",
-        "source": "https://upwork.com/sample1",
-        "draft": "I saw your request for Sentinel optimization. I specialize in KQL and reducing false positives..."
-    },
-    {
-        "title": "Splunk Enterprise Security Deployment",
-        "tech": "Splunk",
-        "score": 78,
-        "is_genuine": True,
-        "location": "Remote (US Only)",
-        "source": "https://linkedin.com/sample2",
-        "draft": "With 5 years of Splunk ES experience, I can handle your deployment from indexing to dashboards."
-    }
-]
+# 1. Force a fresh read of the CSV (Disabling long-term cache)
+@st.cache_data(ttl=600)  # Re-checks the file every 10 minutes maximum
+def load_data():
+    file_path = 'data/jobs.csv'
+    if os.path.exists(file_path):
+        try:
+            df = pd.read_csv(file_path)
+            # Ensure columns exist even if file is new
+            required_cols = ["title", "source", "weightage_score", "is_genuine", "draft"]
+            for col in required_cols:
+                if col not in df.columns:
+                    df[col] = "N/A"
+            return df.sort_values(by="weightage_score", ascending=False)
+        except Exception as e:
+            st.error(f"Error reading data: {e}")
+            return pd.DataFrame()
+    return pd.DataFrame()
 
-# --- SIDEBAR FILTERS ---
-st.sidebar.header("Filters")
-selected_tech = st.sidebar.multiselect("Security Stack", ["Splunk", "Sentinel", "QRadar", "XSOAR", "XSIAM"], default=["Splunk", "Sentinel"])
+# --- UI HEADER ---
+st.title("🛡️ SIEM/SOAR Scout")
+st.caption("Automated Freelance Lead Generation | Updated Hourly")
 
-# --- MAIN DASHBOARD ---
-for job in data:
-    if job["tech"] in selected_tech:
+# --- DATA LOADING ---
+df = load_data()
+
+if df.empty:
+    st.info("📡 The agent is currently scouting for new leads. Check back in a bit!")
+    if st.button("Force Refresh"):
+        st.cache_data.clear()
+        st.rerun()
+else:
+    # Statistics Row
+    col_a, col_b = st.columns(2)
+    col_a.metric("Total Leads", len(df))
+    col_b.metric("High Match (>80)", len(df[df['weightage_score'] >= 80]))
+
+    st.divider()
+
+    # --- JOB FEED ---
+    for index, row in df.iterrows():
+        # Color coding the score for visual priority
+        score = row['weightage_score']
+        status_color = "🟢" if score >= 80 else "🟡" if score >= 50 else "🔴"
+        
         with st.container():
-            # Header with Score Metric
-            col1, col2, col3 = st.columns([3, 1, 1])
+            c1, c2 = st.columns([4, 1])
             
-            with col1:
-                st.markdown(f"### {job['title']}")
-                st.caption(f"📍 {job['location']} | 🛠️ {job['tech']}")
+            with c1:
+                st.subheader(f"{status_color} {row['title']}")
+                st.write(f"**Relevance Score:** {score}%")
             
-            with col2:
-                # Color coding the score
-                color = "normal" if job["score"] > 80 else "off"
-                st.metric("Weightage", f"{job['score']}%", delta_color=color)
-            
-            with col3:
-                status = "✅ Genuine" if job["is_genuine"] else "⚠️ Review"
-                st.write(f"**Status:** \n\n {status}")
+            with c2:
+                if row['is_genuine']:
+                    st.success("Genuine")
+                else:
+                    st.warning("Review")
 
-            # Expandable Details
-            with st.expander("View Details & AI Draft"):
-                st.write("**Recommended Bid:**")
-                st.info(job["draft"])
-                st.link_button("View Original Post", job["source"])
+            # Expandable Details & Bid
+            with st.expander("View AI Analysis & Bid Draft"):
+                st.write("**AI-Generated Bid:**")
+                st.info(row['draft'])
+                
+                # Copy Button logic
+                copy_button(row['draft'], index)
+                
+                st.link_button("🌐 Open Job Posting", row['source'])
             
             st.divider()
+
+# --- SIDEBAR & FOOTER ---
+with st.sidebar:
+    st.header("Settings")
+    if st.button("Clear App Cache"):
+        st.cache_data.clear()
+        st.rerun()
+    st.write("---")
+    st.write("Agent Status: **Online**")
