@@ -60,8 +60,14 @@ def fetch_cyber_leads():
     return found_jobs
 
 def process_and_save(raw_leads):
-    """Processes leads through AI and saves to CSV."""
+    # Ensure folder exists immediately
+    os.makedirs('data', exist_ok=True)
+    
     if not raw_leads:
+        # Create an empty CSV with headers if it doesn't exist
+        if not os.path.exists(CSV_FILE):
+            pd.DataFrame(columns=["title", "source", "weightage_score", "is_genuine", "draft", "found_at"]).to_csv(CSV_FILE, index=False)
+        print("No jobs found, but ensured CSV exists.")
         return
 
     os.makedirs('data', exist_ok=True)
