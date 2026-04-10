@@ -56,6 +56,7 @@ def fetch_cyber_leads():
         'site:remoteok.com "Security Engineer"'
     ]
     found_jobs = []
+    MAX_TOTAL_RESULTS = 15
     
     with DDGS() as ddgs:
         for query in queries:
