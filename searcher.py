@@ -8,8 +8,8 @@ from bs4 import BeautifulSoup
 from datetime import datetime
 
 # --- CONFIGURATION ---
-# Fixed: Always create directory to prevent GitHub Action "pathspec" errors
-os.makedirs('data', exist_ok=True) 
+# Ensure the data directory exists to prevent GitHub Actions pathspec errors
+os.makedirs('data', exist_ok=True)
 CSV_FILE = 'data/jobs.csv'
 
 # Setup AI
@@ -17,14 +17,25 @@ genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 def scrape_with_playwright(url):
-    """Bypasses 403 Forbidden errors by using a real browser head."""
+    """Bypasses 403 errors and timeouts with custom User-Agents."""
     with sync_playwright() as p:
+        # Using a realistic user agent to bypass basic bot detection
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36")
+        context = browser.new_context(
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+            viewport={'width': 1280, 'height': 800}
+        )
         page = context.new_page()
         try:
             print(f"🌐 Scraping: {url}")
-            page.goto(url, wait_until="networkidle", timeout=60000)
+            # Reduced timeout to 45s to prevent the entire Action from hanging
+            page.goto(url, wait_until="domcontentloaded", timeout=45000)
+            
+            # Simple check for LinkedIn login wall
+            if "login" in page.url:
+                print("⚠️ LinkedIn login wall detected. Skipping.")
+                return None
+                
             content = page.content()
             browser.close()
             return BeautifulSoup(content, 'html.parser')
@@ -34,8 +45,9 @@ def scrape_with_playwright(url):
             return None
 
 def get_linkedin_leads():
-    """Fetches niche security roles from LinkedIn Guest Search."""
-    url = "https://www.linkedin.com/jobs/search/?keywords=SIEM%20SOAR%20Splunk%20Sentinel"
+    """Fetches niche security roles from LinkedIn."""
+    # Targeting specific tools mentioned in your search history
+    url = "https://www.linkedin.com/jobs/search/?keywords=SIEM%20SOAR%20Splunk%20Sentinel%20Wazuh"
     soup = scrape_with_playwright(url)
     leads = []
     if soup:
@@ -67,7 +79,7 @@ def get_freelancer_leads():
     return leads
 
 def fetch_rss_leads():
-    """Existing RSS logic for Upwork and RemoteOK."""
+    """RSS logic for Upwork and RemoteOK."""
     feeds = [
         "https://www.upwork.com/ab/feed/jobs/rss?q=SIEM+OR+SOAR+OR+Wazuh",
         "https://remoteok.com/remote-security-jobs.rss"
@@ -80,18 +92,21 @@ def fetch_rss_leads():
     return results
 
 def get_ai_score(title, snippet):
-    """Refined scoring: Prioritizes niche tools, allows 'Security Engineer'."""
+    """
+    Relaxed Scoring: Lowers red-flag conditions to capture more technical leads.
+    Focuses on keyword matching rather than strict exclusion.
+    """
     prompt = f"""
-    Analyze this freelance lead for a SIEM/SOAR/Detection Engineer.
+    Analyze this job for a SIEM/SOAR/Detection Engineer.
     Title: {title}
     Details: {snippet}
 
     SCORING RULES:
-    - 80-100: Explicitly mentions Splunk, XSOAR, Sentinel, QRadar, or Wazuh.
-    - 60-79: General Cybersecurity/Automation Engineer or SOC roles.
-    - 0: HR, Recruitment, Management, GTM, or Compliance roles.
+    - 80-100: Mentions Splunk, XSOAR, Sentinel, QRadar, or Wazuh.
+    - 50-79: General Security, Python Automation, or SOC Engineer roles.
+    - 0: Strictly Management or HR roles. (Relaxing Red Flags for now).
 
-    Return JSON: {{"score": 90, "reason": "Mentions Splunk SOAR", "bid": "Expert pitch..."}}
+    Return ONLY valid JSON: {{"score": 90, "reason": "Reasoning", "bid": "Short draft"}}
     """
     try:
         response = model.generate_content(prompt)
@@ -104,20 +119,21 @@ def main():
     # 1. Gather all leads
     all_raw = fetch_rss_leads() + get_linkedin_leads() + get_freelancer_leads()
     
-    # 2. Setup CSV
+    # 2. Setup CSV (Corrected to create new if missing)
     if not os.path.exists(CSV_FILE):
         pd.DataFrame(columns=["title", "source", "weightage_score", "is_genuine", "draft", "found_at"]).to_csv(CSV_FILE, index=False)
     
     df = pd.read_csv(CSV_FILE)
     new_data = []
 
-    # 3. Process with LOWER threshold (60) to see results
+    # 3. Process with LOWER threshold (50) to populate the dashboard
     for lead in all_raw:
-        if lead['source'] in df['source'].values: continue
+        if lead['source'] in df['source'].values: 
+            continue
             
         analysis = get_ai_score(lead['title'], lead['snippet'])
-        if analysis.get('score', 0) >= 60:
-            print(f"✅ Match Found: {lead['title']} ({analysis['score']})")
+        if analysis.get('score', 0) >= 50:
+            print(f"✅ Potential Match: {lead['title']} ({analysis['score']})")
             new_data.append({
                 "title": lead['title'],
                 "source": lead['source'],
@@ -132,7 +148,7 @@ def main():
         pd.concat([df, pd.DataFrame(new_data)], ignore_index=True).to_csv(CSV_FILE, index=False)
         print(f"🚀 Success: Added {len(new_data)} new leads.")
     else:
-        print("Done. All found leads were below quality threshold.")
+        print("Done. No high-scoring leads added this cycle.")
 
 if __name__ == "__main__":
     main()
