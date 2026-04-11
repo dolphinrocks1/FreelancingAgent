@@ -30,6 +30,7 @@ jobs:
         run: |
           git config --global user.name "Scout-Bot"
           git config --global user.email "bot@scout.com"
-          git add data/last_run.txt data/jobs.csv || true
+          git add data/last_run.txt data/jobs.csv
+          # The '|| true' ensures the workflow doesn't fail if there's nothing to change
           git commit -m "Automated Scout Run: $(date)" || echo "No changes to commit"
           git push
