@@ -1,13 +1,15 @@
 import streamlit as st
 import pandas as pd
 import os
+from datetime import datetime
 
 st.set_page_config(page_title="Scout HQ", layout="wide", page_icon="🛡️")
 
-# Center alignment for the Score column
+# CSS to ensure scannability and professional feel
 st.markdown("""
     <style>
-    [data-testid="stHeader"] th:nth-child(1), td:nth-child(1) { text-align: center !important; }
+    [data-testid="stHeader"] th { text-align: left !important; }
+    .stDataFrame td { vertical-align: middle !important; }
     </style>
 """, unsafe_allow_html=True)
 
@@ -19,35 +21,29 @@ def load_data():
     
     df = pd.read_csv(CSV_FILE)
     
-    # 1. Map actual CSV columns to UI names
-    rename_map = {
-        'weightage_score': 'score',
-        'draft': 'pitch'
-    }
+    # 1. Column Mapping
+    rename_map = {'weightage_score': 'score', 'draft': 'pitch'}
     df = df.rename(columns=rename_map)
     
-    # 2. Ensure all required columns exist to prevent KeyError
-    required_cols = {
-        'score': 0,
-        'title': 'Unknown Title',
-        'source': '#',
-        'pitch': 'No pitch generated',
-        'last_scanned': 'N/A',
-        'status': 'New',
-        'service': 'Cyber Security'
-    }
-    for col, default in required_cols.items():
-        if col not in df.columns:
-            df[col] = default
+    # 2. Fix 'Scanned At' data
+    # If the CSV column is empty or missing, we use the file's last modified time as a proxy
+    file_mod_time = datetime.fromtimestamp(os.path.getmtime(CSV_FILE)).strftime('%Y-%m-%d %H:%M')
+    if 'last_scanned' not in df.columns:
+        df['last_scanned'] = file_mod_time
+    df['last_scanned'] = df['last_scanned'].fillna(file_mod_time)
 
-    # 3. Clean and Sort
-    df['score'] = pd.to_numeric(df['score'], errors='coerce').fillna(0).astype(int)
+    # 3. Ensure essential columns exist
+    defaults = {'status': 'New', 'service': 'Cyber Security', 'pitch': 'AI analysis pending...'}
+    for col, val in defaults.items():
+        if col not in df.columns:
+            df[col] = val
+
+    # 4. Interactive 'Applied' column for the table
+    df['Mark Applied'] = df['status'] == 'Applied'
     
-    # Sort latest to oldest if a timestamp is found in the 'last_scanned' or 'found_at'
-    if 'last_scanned' in df.columns:
-        df = df.sort_index(ascending=False) # Fallback to index sorting for 'latest first'
-        
-    return df
+    # 5. Type Casting & Latest First
+    df['score'] = pd.to_numeric(df['score'], errors='coerce').fillna(0).astype(int)
+    return df.sort_index(ascending=False)
 
 df = load_data()
 
@@ -57,7 +53,7 @@ with st.sidebar:
     service_choice = st.selectbox("Target Niche", 
                                 ["Cyber Security", "AI Agent Builder", "App Developer", "Software Developer"])
     st.divider()
-    if st.button("🔄 Refresh Data"):
+    if st.button("🔄 Sync & Refresh"):
         st.rerun()
 
 # --- MAIN UI ---
@@ -67,41 +63,59 @@ if not df.empty:
     tab1, tab2 = st.tabs(["🆕 New Found Details", "✅ Applied Leads"])
 
     with tab1:
-        # Filter for current niche and status
-        new_df = df[(df['status'] == 'New') & (df['service'] == service_choice)]
+        # Filter for the view
+        active_mask = (df['status'] == 'New') & (df['service'] == service_choice)
+        active_df = df[active_mask].copy()
         
-        if not new_df.empty:
-            st.data_editor(
-                new_df[['score', 'title', 'source', 'pitch', 'last_scanned']],
+        if not active_df.empty:
+            # Table logic with "Mark Applied" as an interactive column
+            # Note the column order: title -> Listing -> score -> pitch -> last_scanned
+            edited_df = st.data_editor(
+                active_df[['Mark Applied', 'title', 'source', 'score', 'pitch', 'last_scanned']],
                 column_config={
-                    "score": st.column_config.NumberColumn("Score", width="small", format="%d%%"),
+                    "Mark Applied": st.column_config.CheckboxColumn("Applied?", help="Check to move to Applied tab"),
+                    "title": st.column_config.TextColumn("Job Title", width="medium"),
                     "source": st.column_config.LinkColumn("Listing", display_text="View Job"),
+                    "score": st.column_config.NumberColumn("Score", format="%d%%", width="small"),
                     "pitch": st.column_config.TextColumn("Proposed Pitch", width="large"),
-                    "last_scanned": "Scanned At"
+                    "last_scanned": st.column_config.TextColumn("Scanned At", width="small")
                 },
                 hide_index=True,
                 use_container_width=True,
-                disabled=True,
-                key="discovery_table"
+                key="editor_table"
             )
-            
-            # Application Action
-            st.markdown("---")
-            with st.expander("Update Lead Status"):
-                job_to_update = st.selectbox("Select job to move to Applied:", new_df['title'].tolist())
-                if st.button("Mark as Applied"):
-                    df.loc[df['title'] == job_to_update, 'status'] = 'Applied'
-                    df.to_csv(CSV_FILE, index=False)
-                    st.success(f"Moved '{job_to_update}' to Applied tab.")
-                    st.rerun()
+
+            # 6. Save changes if a checkbox is clicked
+            # Detect which rows were changed to True
+            if not edited_df.equals(active_df[['Mark Applied', 'title', 'source', 'score', 'pitch', 'last_scanned']]):
+                for i, row in edited_df.iterrows():
+                    if row['Mark Applied']:
+                        # Match by title to update original master dataframe
+                        df.loc[df['title'] == row['title'], 'status'] = 'Applied'
+                
+                # Cleanup temporary column before saving to CSV
+                save_df = df.drop(columns=['Mark Applied'])
+                # Re-map back to original CSV names
+                save_df = save_df.rename(columns={'score': 'weightage_score', 'pitch': 'draft'})
+                save_df.to_csv(CSV_FILE, index=False)
+                st.toast("Updated lead status!", icon="✅")
+                st.rerun()
         else:
-            st.info(f"No new leads for {service_choice}.")
+            st.info(f"No new leads found for {service_choice}.")
 
     with tab2:
         applied_df = df[df['status'] == 'Applied']
         if not applied_df.empty:
-            st.table(applied_df[['score', 'title', 'source', 'last_scanned']])
+            st.dataframe(
+                applied_df[['title', 'source', 'score', 'last_scanned']],
+                column_config={
+                    "source": st.column_config.LinkColumn("Listing", display_text="View Job"),
+                    "score": st.column_config.NumberColumn("Score", format="%d%%")
+                },
+                hide_index=True,
+                use_container_width=True
+            )
         else:
-            st.info("No applied leads yet.")
+            st.info("No applied leads recorded yet.")
 else:
-    st.warning("No data found in jobs.csv.")
+    st.warning("No data found in data/jobs.csv. Run a scan first.")
