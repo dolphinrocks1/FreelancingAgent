@@ -21,11 +21,12 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          # Fix for Ubuntu 24.04 libasound dependency
+          
+          # Fix for Ubuntu 24.04 (Noble) library changes
           sudo apt-get update
-          sudo apt-get install -y libasound2t64
-          # Install playwright and its browser binaries
-          pip install playwright
+          sudo apt-get install -y libasound2t64  # This replaces the missing libasound2
+          
+          # Install Playwright and force system dependencies
           playwright install chromium --with-deps
       
       - name: Run Searcher Agent
