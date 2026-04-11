@@ -1,44 +1,56 @@
 import streamlit as st
 import pandas as pd
 import os
-import requests
 
 # Page Config
-st.set_page_config(page_title="SIEM/SOAR Scout", layout="wide")
+st.set_page_config(page_title="SIEM/SOAR Scout", page_icon="🛡️", layout="wide")
+
 CSV_FILE = "data/jobs.csv"
 
-if st.button("🔄 Refresh Dashboard"):
-    st.rerun()
-
-# --- REFRESH LOGIC ---
-def trigger_github_action():
-    # Replace with your actual GitHub Details
-    OWNER = "dolphinrocks1" 
-    REPO = "FreelancingAgent"
-    WORKFLOW_ID = "agent_run.yml"
-    TOKEN = st.secrets["GH_TOKEN"] # Add this to Streamlit Secrets
-    
-    url = f"https://api.github.com/repos/{OWNER}/{REPO}/actions/workflows/{WORKFLOW_ID}/dispatches"
-    headers = {"Authorization": f"token {TOKEN}", "Accept": "application/vnd.github.v3+json"}
-    data = {"ref": "main"}
-    
-    response = requests.post(url, headers=headers, json=data)
-    return response.status_code == 204
-
-# --- UI COMPONENTS ---
+# Sidebar for Manual Sync
 with st.sidebar:
-    st.header("🔄 Manual Sync")
+    st.title("🔄 Manual Sync")
+    st.info("The agent runs automatically every 3 hours.")
     if st.button("🚀 Trigger New Scan"):
-        if trigger_github_action():
-            st.success("Action triggered! Check back in 2 minutes.")
-        else:
-            st.error("Failed to trigger. Check GH_TOKEN in Streamlit secrets.")
+        st.warning("Ensure GH_TOKEN is set in Streamlit Secrets to use this.")
 
 st.title("🛡️ SIEM/SOAR Scout")
-df = pd.read_csv(CSV_FILE) if os.path.exists(CSV_FILE) else pd.DataFrame()
+st.markdown("---")
 
-if not df.empty:
-    st.info(f"🕒 Last data update: {df['found_at'].iloc[-1]}")
-    # Display logic here...
+# Data Loading with Error Handling
+if os.path.exists(CSV_FILE):
+    try:
+        df = pd.read_csv(CSV_FILE)
+        
+        # Clean up data: ensure weightage is numeric and drop empty rows
+        df['weightage_score'] = pd.to_numeric(df['weightage_score'], errors='coerce').fillna(0)
+        df = df.sort_values(by='weightage_score', ascending=False)
+
+        # Dashboard Metrics
+        col1, col2, col3 = st.columns(3)
+        col1.metric("Total Leads", len(df))
+        col2.metric("High Match (60+)", len(df[df['weightage_score'] >= 60]))
+        col3.write(f"🕒 **Last Update:** {df['found_at'].iloc[-1] if 'found_at' in df.columns else 'Unknown'}")
+
+        # Display Loop
+        for index, row in df.iterrows():
+            # Skip the system heartbeat entries from the main view
+            if row['is_genuine'] == "System":
+                continue
+                
+            with st.container():
+                st.subheader(f"📍 {row['title']}")
+                c1, c2 = st.columns([1, 4])
+                c1.progress(int(row['weightage_score']) / 100)
+                c2.write(f"**Score:** {row['weightage_score']}% | **Source:** [View Posting]({row['source']})")
+                
+                with st.expander("🔍 View AI Analysis & Proposed Pitch"):
+                    st.info(row['draft'])
+                    st.button("📋 Copy Bid to Clipboard", key=f"btn_{index}")
+                st.markdown("---")
+
+    except Exception as e:
+        st.error(f"Error loading UI: {e}")
+        st.write("Raw Data Preview:", df if 'df' in locals() else "CSV could not be read.")
 else:
-    st.warning("No leads found yet. Try triggering a manual scan above.")
+    st.warning("Waiting for the first scan to complete. Check GitHub Actions for status.")
