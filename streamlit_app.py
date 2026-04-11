@@ -89,34 +89,27 @@ if not df.empty:
 tab1, tab2 = st.tabs(["🆕 New Discovery", "✅ Applied & Archived"])
 
 with tab1:
-    if not df.empty and 'service' in df.columns:
-        # Show only new leads for the selected niche
-        active = df[(df['status'] == 'New') & (df['service'] == current_niche)].copy()
+    # Add a reset button to clear out the old, tagless leads
+    if st.button("🗑️ Clear All Old Leads"):
+        pd.DataFrame(columns=['id', 'title', 'source', 'weightage_score', 'service', 'status', 'draft', 'last_scanned']).to_csv(CSV_FILE, index=False)
+        st.success("Database wiped! Run a new scan now.")
+        st.rerun()
+
+    if not df.empty:
+        # Improved Filter: Show leads for this niche OR leads that are missing a service tag
+        active = df[
+            (df['status'] == 'New') & 
+            ((df['service'] == current_niche) | (df['service'].isna()) | (df['service'] == ''))
+        ].copy()
         
         if not active.empty:
-            active['Mark Applied'] = False
-            # Interactive data editor
-            edited = st.data_editor(
-                active[['Mark Applied', 'title', 'source', 'score', 'pitch', 'last_scanned']],
-                column_config={
-                    "Mark Applied": st.column_config.CheckboxColumn("Apply?"),
-                    "source": st.column_config.LinkColumn("Listing", display_text="View"),
-                    "score": st.column_config.NumberColumn("Match", format="%d%%"),
-                    "pitch": st.column_config.TextColumn("Proposed Pitch", width="large"),
-                    "last_scanned": "Scanned At"
-                },
-                hide_index=True, use_container_width=True, key="discovery_table"
+            st.data_editor(
+                active[['title', 'source', 'score', 'pitch', 'last_scanned']],
+                # ... keep your existing column_config ...
+                use_container_width=True
             )
-
-            # Save logic for "Mark Applied"
-            if edited['Mark Applied'].any():
-                applied_titles = edited[edited['Mark Applied'] == True]['title'].tolist()
-                df.loc[df['title'].isin(applied_titles), 'status'] = 'Applied'
-                # Rename back to original CSV format before saving
-                df.rename(columns={'score': 'weightage_score', 'pitch': 'draft'}).to_csv(CSV_FILE, index=False)
-                st.rerun()
         else:
-            st.info(f"No leads found for {current_niche} in the local database. Select the niche above to scan.")
+            st.info(f"No 'New' leads found for {current_niche}. Try 'Force Manual Scan' or change the niche.")
 
 with tab2:
     applied_leads = df[df['status'] == 'Applied'].copy()
