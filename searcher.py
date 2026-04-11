@@ -14,16 +14,15 @@ model = genai.GenerativeModel('gemini-1.5-flash')
 def get_ai_analysis(title, snippet):
     """Uses Gemini to score the job and draft a professional bid."""
     prompt = f"""
-    Analyze this freelance Cyber Security job:
+    Analyze this job for a Senior SIEM/SOAR Engineer:
     Title: {title}
     Description: {snippet}
-
-    1. Score from 0-100 based on SIEM/SOAR relevance.
-    2. Determine if it's a genuine job (true) or spam/vague (false).
-    3. Write a 3-sentence high-impact bid as a Senior Security Engineer.
-
-    Return ONLY a valid JSON object:
-    {{"score": 75, "is_genuine": true, "bid": "..."}}
+    
+    1. Score (0-100): How relevant is this to SIEM/SOAR/SOC specifically?
+    2. Genuine: Is this a clear project (true) or just a company profile/spam (false)?
+    3. Bid: Write a concise 3-sentence expert pitch focusing on 'Detection Engineering' and 'Automation'.
+    
+    Return ONLY JSON: {{"score": 85, "is_genuine": true, "bid": "..."}}
     """
     try:
         response = model.generate_content(prompt)
