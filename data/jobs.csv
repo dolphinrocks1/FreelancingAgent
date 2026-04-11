@@ -1,2 +1,2 @@
 title,source,weightage_score,is_genuine,draft,found_at
-System Check: Scraper Active,https://github.com,1,System,No matches found in this crawl. Logs show raw leads were processed.,2026-04-11 17:40
+System Check: No High Matches,https://github.com,1,System,Scanned 15 leads. None passed the relevance filter.,"Saturday, Apr 11 - 11:30 PM"
