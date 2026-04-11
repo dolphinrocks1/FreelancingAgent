@@ -36,18 +36,19 @@ def get_ai_analysis(title, snippet):
 def fetch_cyber_leads():
     """Finds a wider range of SOC/SIEM jobs across multiple platforms."""
     queries = [
-       # Upwork: High-intent leads
+       # Upwork targets
         'site:upwork.com ("SIEM" OR "SOAR" OR "SOC" OR "Log Management") "Remote"',
-        'site:upwork.com ("Splunk" OR "Sentinel" OR "Wazuh" OR "ELK" OR "XSOAR" OR "Automation") "Freelance"',
+        'site:upwork.com ("Splunk" OR "Sentinel" OR "Wazuh" OR "ELK") "Freelance"',
         
-        # Freelancer & Guru: Broader contract market
+        # Freelancer & Guru targets
         'site:freelancer.com ("Cybersecurity" OR "Information Security") "Remote"',
         'site:guru.com ("Security Analyst" OR "Firewall" OR "Compliance")',
         
-        # LinkedIn & Boards: (Often higher quality)
+        # LinkedIn/Job Boards
         'site:linkedin.com/jobs "SIEM" "Contract"',
         'site:simplyhired.com "Security Operations Center" "Remote"'
     ]
+    
     found_jobs = []
     MAX_TOTAL_RESULTS = 5
     
@@ -57,17 +58,18 @@ def fetch_cyber_leads():
                 break
             try:
                 # timelimit='w' (week) ensures we find jobs even if today was quiet
-                results = ddgs.text(query, timelimit='w', max_results=8)
+                results = ddgs.text(query, timelimit='w', max_results=10)
                 for r in results:
-                    # Filter for actual job/project pages
-                    if any(x in r['href'] for x in ["/jobs/", "/projects/", "/view/"]):
+                    # Capture actual job/project pages
+                    if any(x in r['href'].lower() for x in ["/jobs/", "/projects/", "/view/"]):
                         found_jobs.append({
                             "title": r['title'].split(" - ")[0],
                             "source": r['href'],
-                            "snippet": r['body']
+                            "snippet": r['body'],
+                            "found_at": datetime.now().strftime("%Y-%m-%d %H:%M")
                         })
                 
-                # Stay safe from IP blocks
+                # Sleep to stay under the radar of bot detection
                 time.sleep(5) 
                 
             except Exception as e:
