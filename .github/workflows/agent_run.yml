@@ -28,8 +28,8 @@ jobs:
 
       - name: Commit and Push Results
         run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add data/jobs.csv || echo "No data file to add"
-          git commit -m "Auto-update: New SIEM/SOAR leads" || echo "No changes to commit"
+          git config --global user.name "Scout-Bot"
+          git config --global user.email "bot@scout.com"
+          git add data/last_run.txt data/jobs.csv || true
+          git commit -m "Automated Scout Run: $(date)" || echo "No changes to commit"
           git push
