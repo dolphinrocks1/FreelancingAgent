@@ -6,6 +6,7 @@ import json
 import google.generativeai as genai
 from datetime import datetime
 import pytz
+from urllib.parse import quote  # Needed to fix the InvalidURL error
 
 # Configuration
 IST = pytz.timezone('Asia/Kolkata')
@@ -28,13 +29,13 @@ def load_and_repair_csv():
     try:
         df = pd.read_csv(CSV_FILE)
         
-        # 1. Standardize naming if older columns exist
+        # Standardize naming if older columns exist
         if 'status' in df.columns and 'is_genuine' not in df.columns:
             df = df.rename(columns={'status': 'is_genuine'})
         if 'last_scanned' in df.columns and 'found_at' not in df.columns:
             df = df.rename(columns={'last_scanned': 'found_at'})
             
-        # 2. Force injection of missing required columns to prevent KeyErrors
+        # Force injection of missing required columns
         for col in headers:
             if col not in df.columns:
                 if col == 'is_genuine':
@@ -46,7 +47,6 @@ def load_and_repair_csv():
         
         return df
     except Exception:
-        # If file is unreadable/corrupt, start fresh with headers
         return pd.DataFrame(columns=headers)
 
 def get_ai_analysis(title, desc, service_type):
@@ -79,11 +79,9 @@ def get_ai_analysis(title, desc, service_type):
         return {"score": 50, "analysis": "Fallback", "pitch": f"Expert {service_type} engineering for {title}."}
 
 def main():
-    # Use command line arg or default to Cyber Security
     service = sys.argv[1] if len(sys.argv) > 1 else "Cyber Security"
     print(f"🚀 Scanning for {service}...")
     
-    # Load and repair data BEFORE starting search to prevent filter crashes
     existing_df = load_and_repair_csv()
     
     queries = {
@@ -93,14 +91,22 @@ def main():
         "Software Developer": '("Python" OR "Backend" OR "FastAPI" OR "Microservices")'
     }
     
-    query = queries.get(service, "Python+Developer")
-    feed = feedparser.parse(f"https://www.upwork.com/ab/feed/jobs/rss?q={query}")
+    raw_query = queries.get(service, "Python OR Backend")
+    
+    # FIX: Encode the query to handle quotes, spaces, and OR logic in the URL
+    encoded_query = quote(raw_query)
+    rss_url = f"https://www.upwork.com/ab/feed/jobs/rss?q={encoded_query}"
+    
+    feed = feedparser.parse(rss_url)
     new_found_leads = []
     
-    # Process top 10 results
+    # Check for feed errors
+    if hasattr(feed, 'bozo_exception') and feed.bozo_exception:
+        print(f"❌ RSS Feed Error: {feed.bozo_exception}")
+        return
+
     for entry in feed.entries[:10]:
-        # Duplicate check
-        if not existing_df.empty and entry.link in existing_df['id'].values:
+        if not existing_df.empty and str(entry.link) in existing_df['id'].astype(str).values:
             continue
 
         analysis = get_ai_analysis(entry.title, entry.description, service)
@@ -116,10 +122,8 @@ def main():
                 "found_at": datetime.now(IST).strftime("%A, %b %d - %I:%M %p")
             })
 
-    # Combine data
     if new_found_leads:
         new_df = pd.DataFrame(new_found_leads)
-        # We preserve ALL existing data (including Applied leads) and append new ones
         final_df = pd.concat([existing_df, new_df]).drop_duplicates(subset='id', keep='last')
         final_df.to_csv(CSV_FILE, index=False)
         print(f"✅ Successfully added {len(new_found_leads)} new leads.")
