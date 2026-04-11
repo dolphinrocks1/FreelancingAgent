@@ -7,6 +7,9 @@ import requests
 st.set_page_config(page_title="SIEM/SOAR Scout", layout="wide")
 CSV_FILE = "data/jobs.csv"
 
+if st.button("🔄 Refresh Dashboard"):
+    st.rerun()
+
 # --- REFRESH LOGIC ---
 def trigger_github_action():
     # Replace with your actual GitHub Details
