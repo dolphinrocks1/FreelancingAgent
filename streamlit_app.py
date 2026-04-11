@@ -2,99 +2,63 @@ import streamlit as st
 import pandas as pd
 import os
 
-# Page Config
-st.set_page_config(page_title="Agency Lead Manager", layout="wide", page_icon="🛡️")
+st.set_page_config(page_title="SIEM/SOAR Scout", layout="wide")
+
+# Center-align the 'Score' column via CSS
+st.markdown("""
+    <style>
+    [data-testid="stTable"] td:nth-child(1), [data-testid="stMetricValue"] { text-align: center; }
+    .stDataFrame td:nth-child(1) { display: flex; justify-content: center; font-weight: bold; }
+    </style>
+""", unsafe_allow_html=True)
 
 CSV_FILE = "data/jobs.csv"
 
-# 1. Helper to ensure data schema is correct (Fixes the KeyError)
-def load_and_repair_data():
-    if not os.path.exists(CSV_FILE):
-        return pd.DataFrame()
-    
+def load_data():
+    if not os.path.exists(CSV_FILE): return pd.DataFrame()
     df = pd.read_csv(CSV_FILE)
-    
-    # Required columns for the new professional UI
-    required_columns = {
-        'status': 'New',
-        'service': 'Cyber Security',
-        'score': 0,
-        'pitch': 'No pitch generated.',
-        'analysis': 'No analysis available.',
-        'id': 'N/A'
-    }
-    
-    # Silently add missing columns to prevent UI crashes
-    for col, default_val in required_columns.items():
-        if col not in df.columns:
-            df[col] = default_val
-            
+    # Ensure Score is numeric to prevent '0' default display
+    if 'score' in df.columns:
+        df['score'] = pd.to_numeric(df['score'], errors='coerce').fillna(0).astype(int)
     return df
 
-# --- SIDEBAR & ANALYTICS ---
-with st.sidebar:
+df = load_data()
+
+# --- HEADER & NICHE SELECTION ---
+col_head, col_sync = st.columns([4, 1])
+with col_head:
     st.title("🛡️ Scout HQ")
-    service_choice = st.selectbox("Target Niche", 
-                                ["Cyber Security", "AI Agent Builder", "App Developer", "Software Developer"])
-    
-    st.markdown("---")
-    st.subheader("📊 Performance")
-    
-    df = load_and_repair_data()
-    
-    if not df.empty:
-        st.metric("Total in Database", len(df))
-        # This line no longer crashes because status is guaranteed to exist
-        applied_count = len(df[df['status'] == 'Applied'])
-        st.metric("Applied Leads", applied_count)
-    else:
-        st.write("Database is empty.")
+    service_choice = st.selectbox("Target Niche", ["Cyber Security", "AI Agent Builder", "App Developer", "Software Developer"])
 
-# --- MAIN DASHBOARD ---
-st.title("Lead Management Dashboard")
-
+# --- TABULAR INTERFACE ---
 if not df.empty:
-    tab1, tab2 = st.tabs(["🆕 New Found Details", "✅ Applied Leads"])
+    new_df = df[(df['status'] == 'New') & (df['service'] == service_choice)].copy()
+    
+    st.subheader(f"📊 Fresh Leads: {service_choice}")
+    
+    # The interactive table
+    st.data_editor(
+        new_df[['score', 'title', 'source', 'pitch', 'last_scanned']],
+        column_config={
+            "score": st.column_config.NumberColumn("Score", format="%d", width="small"),
+            "title": st.column_config.TextColumn("Job Title", width="medium"),
+            "source": st.column_config.LinkColumn("Open Job Link", display_text="View Posting"),
+            "pitch": st.column_config.TextColumn("Proposed Pitch", width="large"),
+            "last_scanned": st.column_config.TextColumn("Last Scanned", width="medium")
+        },
+        hide_index=True,
+        use_container_width=True,
+        disabled=True # Keeps it as a clean view-only table with clickable links
+    )
 
-    with tab1:
-        # Filter for the selected service and 'New' status
-        new_df = df[(df['status'] == 'New') & (df['service'] == service_choice)]
-        
-        if not new_df.empty:
-            # Tabular Summary for quick scanning
-            st.dataframe(new_df[['title', 'score', 'found_at']].sort_values('score', ascending=False), 
-                         use_container_width=True)
-            
-            st.markdown("### Action Center")
-            for i, row in new_df.iterrows():
-                with st.expander(f"📝 {row['title']} (Score: {row['score']})"):
-                    st.write(f"**AI Analysis:** {row['analysis']}")
-                    st.text_area("Proposed Pitch", row['pitch'], height=120, key=f"pitch_{i}")
-                    
-                    c1, c2 = st.columns(2)
-                    if c1.button("✅ Mark as Applied", key=f"btn_app_{i}"):
-                        df.at[i, 'status'] = 'Applied'
-                        df.to_csv(CSV_FILE, index=False)
-                        st.success("Moved to Applied Tab!")
-                        st.rerun()
-                    c2.link_button("🌐 Open Job Link", row['source'])
-        else:
-            st.info(f"No new leads found for {service_choice}. Run a scan to fetch fresh data.")
-
-    with tab2:
-        applied_df = df[df['status'] == 'Applied']
-        if not applied_df.empty:
-            st.dataframe(applied_df[['title', 'service', 'found_at']], use_container_width=True)
-            
-            for i, row in applied_df.iterrows():
-                with st.container():
-                    col_text, col_btn = st.columns([5, 1])
-                    col_text.write(f"**{row['title']}**")
-                    if col_btn.button("🗑️ Remove", key=f"del_{i}"):
-                        df = df.drop(i)
-                        df.to_csv(CSV_FILE, index=False)
-                        st.rerun()
-        else:
-            st.info("Your applied list is currently empty.")
+    # --- ACTION BUTTONS ---
+    st.markdown("### ⚡ Quick Apply")
+    for i, row in new_df.iterrows():
+        with st.expander(f"Apply to: {row['title']} (Score: {row['score']})"):
+            st.info(f"**AI Pitch:** {row['pitch']}")
+            if st.button("✅ Mark as Applied", key=f"btn_{i}"):
+                df.at[i, 'status'] = 'Applied'
+                df.to_csv(CSV_FILE, index=False)
+                st.rerun()
 else:
-    st.warning("No data found in data/jobs.csv. Run your searcher.py script first.")
+    st.warning("No data found. Please trigger a scan.")
