@@ -87,8 +87,8 @@ def main():
     existing_df = load_and_repair_csv()
     
     queries = {
-        "Cyber Security": "SIEM+SOAR+Wazuh+Sentinel+Splunk",
-        "AI Agent Builder": "LLM+LangChain+AutoGPT+OpenAI+Automation",
+        "Cyber Security": "SIEM+SOAR+Wazuh+Sentinel+Splunk+Cybersecurity Engineer+Automation Engineer+XSOAR+Automation",
+        "AI Agent Builder": "LLM+LangChain+AutoGPT+OpenAI+Automation+AI Agent+AI",
         "App Development": "Flutter+React+Native+iOS+Android",
         "Software Developer": "Python+Backend+FastAPI+Microservices"
     }
