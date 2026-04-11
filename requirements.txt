@@ -3,6 +3,4 @@ streamlit
 google-generativeai
 duckduckgo_search
 feedparser
-requests
 pytz
-beautifulsoup4
