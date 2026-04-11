@@ -75,16 +75,15 @@ def main():
     
     # Define Niche Categories
     queries = {
-        "Cyber Security": '("SIEM" OR "SOAR" OR "Wazuh" OR "Sentinel" OR "Splunk" OR "XSOAR" OR "Automation")',
-        "SOC": '("SOC Analyst" OR "SOC Engineer" OR "SOC" OR "Security Operation Center Architect" OR "SOC Architect")',
-        "AI Agent Builder": '("LLM" OR "LangChain" OR "AI Agent" OR "AutoGPT")',
-        "Software Developer": '("Python" OR "Backend" OR "FastAPI" OR "Microservices")'
+        "Cyber Security": "SIEM+SOAR+Wazuh+Sentinel+Splunk+XSOAR+Automation",
+        "SOC": "SOC+Analyst+Engineer+Architect",
+        "AI Agent Builder": "LLM+LangChain+OpenAI+Automation",
+        "Software Developer": "Python+Backend+FastAPI+Microservices"
     }
     
     # Build URL with safe encoding
-    raw_query = queries.get(service, "Python")
-    encoded_query = quote(raw_query)
-    rss_url = f"https://www.upwork.com/ab/feed/jobs/rss?q={encoded_query}"
+    raw_query = queries.get(service, "Python+Developer")
+    rss_url = f"https://www.upwork.com/ab/feed/jobs/rss?q={raw_query}"
     
     print(f"📡 Requesting: {rss_url}")
     feed = feedparser.parse(rss_url)
