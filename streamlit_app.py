@@ -95,3 +95,11 @@ with st.sidebar:
         st.rerun()
     st.write("---")
     st.write("Agent Status: **Online**")
+
+with st.sidebar:
+    if os.path.exists('data/last_run.txt'):
+        with open('data/last_run.txt', 'r') as f:
+            last_run = f.read()
+        st.caption(f"🕒 Last Scout: {last_run}")
+    else:
+        st.caption("🕒 Last Scout: Never")
