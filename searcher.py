@@ -1,10 +1,10 @@
 import os
 import time
 import pandas as pd
+import feedparser
 import google.generativeai as genai
 from datetime import datetime
 import pytz
-from duckduckgo_search import DDGS
 import json
 
 # --- CONFIGURATION ---
@@ -19,88 +19,73 @@ def get_ist_time():
     return datetime.now(IST).strftime("%A, %b %d - %I:%M %p")
 
 def get_ai_score(title, description):
-    """Heuristic + AI Scoring to ensure technical IC roles pass"""
-    keywords = ['siem', 'soar', 'wazuh', 'sentinel', 'splunk', 'soc', 'detection', 'automation']
+    """Rigid technical IC filter"""
+    keywords = ['siem', 'soar', 'wazuh', 'sentinel', 'splunk', 'soc', 'detection']
     title_lower = title.lower()
-    base_score = 60 if any(k in title_lower for k in keywords) else 0
+    # Force pass if core keyword exists in title
+    base_score = 65 if any(k in title_lower for k in keywords) else 0
 
-    prompt = f"Analyze: {title}. Desc: {description}. Score 0-100 for SIEM/SOAR/SOC technical role. Return ONLY JSON: {{\"score\": 85, \"reason\": \"...\", \"bid\": \"...\"}}"
+    prompt = f"Role: {title}. Desc: {description}. Score 0-100 for a SIEM/SOAR Detection Engineer. Return ONLY JSON: {{\"score\": 85, \"reason\": \"...\", \"bid\": \"...\"}}"
     try:
         response = model.generate_content(prompt)
-        result = json.loads(response.text.strip().replace('```json', '').replace('```', ''))
-        result['score'] = max(result.get('score', 0), base_score)
-        return result
+        res = json.loads(response.text.strip().replace('```json', '').replace('```', ''))
+        return {"score": max(res.get('score', 0), base_score), "bid": res.get('bid', 'N/A')}
     except:
-        return {"score": base_score, "reason": "Keyword fallback"}
-
-def fetch_results(queries, region="wt-wt"):
-    """Performs the actual DDG search with rate-limit handling"""
-    results_list = []
-    with DDGS() as ddgs:
-        for q in queries:
-            try:
-                print(f"🔍 Searching ({region}): {q}")
-                for r in ddgs.text(q, max_results=10, region=region):
-                    results_list.append({"title": r['title'], "link": r['href'], "desc": r['body']})
-                time.sleep(1) # Polite delay
-            except Exception as e:
-                print(f"⚠️ Query failed: {e}")
-    return results_list
+        return {"score": base_score, "bid": "N/A"}
 
 def main():
     print(f"🚀 Starting Searcher Agent at {get_ist_time()}...")
-    
-    # 1. Primary Targeted Search
-    primary_queries = [
-        "site:freelancer.com SIEM SOAR", 
-        "site:freelancer.com Splunk Wazuh",
-        "site:linkedin.com/jobs 'Detection Engineer' remote"
+    raw_leads = []
+
+    # 1. RSS FEEDS (Much more stable than scraping/search)
+    feeds = [
+        "https://www.upwork.com/ab/feed/jobs/rss?q=SIEM+OR+SOAR+OR+Splunk+OR+Cybersecurity",
+        "https://remoteok.com/remote-security-jobs.rss"
     ]
-    raw_leads = fetch_results(primary_queries)
+    
+    for url in feeds:
+        try:
+            print(f"📡 Polling: {url}")
+            feed = feedparser.parse(url)
+            for entry in feed.entries:
+                raw_leads.append({
+                    "title": entry.title,
+                    "link": entry.link,
+                    "desc": entry.get('summary', entry.get('description', ''))
+                })
+        except Exception as e:
+            print(f"⚠️ Feed failed: {e}")
 
-    # 2. Safety Net: Broaden and Retry if 0 results
-    if not raw_leads:
-        print("Empty results. Activating Safety Net & Regional Retry...")
-        time.sleep(5) # Wait 5s to bypass transient blocks
-        safety_queries = [
-            "site:freelancer.com 'SOC Analyst'",
-            "site:freelancer.com 'Cybersecurity Automation'",
-            "site:upwork.com 'SIEM' OR 'SOAR'"
-        ]
-        # Retry with US region to bypass local blocks
-        raw_leads = fetch_results(safety_queries, region="us-en")
-
-    # 3. Processing
+    # 2. PROCESSING
     processed_leads = []
     print(f"🧠 Processing {len(raw_leads)} potential leads...")
+    
     for lead in raw_leads:
         analysis = get_ai_score(lead['title'], lead['desc'])
-        if analysis['score'] >= 30:
+        if analysis['score'] >= 40: # Slightly higher threshold for RSS
             processed_leads.append({
                 "title": lead['title'],
                 "source": lead['link'],
                 "weightage_score": analysis['score'],
                 "is_genuine": "Verified",
-                "draft": analysis.get('bid', "N/A"),
+                "draft": analysis['bid'],
                 "found_at": get_ist_time()
             })
 
-    # 4. Force Heartbeat (Visual Confirmation)
+    # 3. HEARTBEAT & SAVE
     if not processed_leads:
         processed_leads.append({
-            "title": "System Check: Agent Active",
-            "source": "https://github.com/dolphinrocks1",
+            "title": "System Check: RSS Active",
+            "source": "https://github.com",
             "weightage_score": 1,
             "is_genuine": "System",
-            "draft": f"Scan completed at {get_ist_time()}. Scanned {len(raw_leads)} raw leads, 0 passed relevance.",
+            "draft": f"Scanned {len(raw_leads)} leads. All below threshold.",
             "found_at": get_ist_time()
         })
 
-    # 5. Save and Deduplicate
     new_df = pd.DataFrame(processed_leads)
     if os.path.exists(CSV_FILE):
-        combined_df = pd.concat([pd.read_csv(CSV_FILE), new_df], ignore_index=True)
-        final_df = combined_df.drop_duplicates(subset='source', keep='last')
+        final_df = pd.concat([pd.read_csv(CSV_FILE), new_df], ignore_index=True).drop_duplicates(subset='source', keep='last')
     else:
         final_df = new_df
     
