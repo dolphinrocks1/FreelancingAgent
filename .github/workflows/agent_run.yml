@@ -1,19 +1,20 @@
-name: Hourly SIEM/SOAR Scout
+name: Run Searcher Agent
 
 on:
   schedule:
-    - cron: '0 */3 * * *'  # Runs at the start of every hour
-  workflow_dispatch:      # Allows you to run it manually for testing
+    - cron: '0 */3 * * *' # Runs every 3 hours
+  workflow_dispatch: # Allows you to run it manually for testing
 
 jobs:
   build:
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
 
@@ -21,45 +22,18 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          
-          # 1. Manually install every library Playwright needs for Chromium on Ubuntu 24.04
-          sudo apt-get update
-          sudo apt-get install -y \
-            libasound2t64 \
-            libgbm1 \
-            libnss3 \
-            libatk-bridge2.0-0 \
-            libgtk-3-0 \
-            libx11-xcb1 \
-            libxcb-dri3-0 \
-            libxcomposite1 \
-            libxcursor1 \
-            libxdamage1 \
-            libxfixes3 \
-            libxi6 \
-            libxrandr2 \
-            libxtst6 \
-            libpangocairo-1.0-0 \
-            libpango-1.0-0 \
-            libatk1.0-0 \
-            libcairo-gobject2 \
-            libcairo2 \
-            libgdk-pixbuf-2.0-0 \
-            libglib2.0-0
-            
-          # 2. Install ONLY the browser binaries (skip the failing --with-deps check)
-          playwright install chromium
-      
+          # Playwright and system-level deps removed to fix installation errors
+
       - name: Run Searcher Agent
-        run: python searcher.py
         env:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        run: python searcher.py
 
       - name: Commit and Push Results
         run: |
           git config --global user.name "Scout-Bot"
-          git config --global user.email "bot@scout.com"
-          git add data/last_run.txt data/jobs.csv
-          # The '|| true' ensures the workflow doesn't fail if there's nothing to change
-          git commit -m "Automated Scout Run: $(date)" || echo "No changes to commit"
+          git config --global user.email "bot@github.com"
+          git add data/jobs.csv
+          # The '|| exit 0' prevents the action from failing if there are no new leads
+          git commit -m "Automated Scout Run: $(date)" || exit 0
           git push
