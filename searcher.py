@@ -104,9 +104,8 @@ def main():
 
     # Filter out old leads for this specific niche to avoid duplicates
     # This logic now has guaranteed 'status' and 'service' columns
-    other_leads = existing_df[
-        (existing_df['status'] != 'New') | 
-        (existing_df['service'] != service)
+    status_col = 'is_genuine' if 'is_genuine' in existing_df.columns else 'status'
+    other_leads = existing_df[existing_df[status_col] != 'New']
     ]
     
     if new_found_leads:
