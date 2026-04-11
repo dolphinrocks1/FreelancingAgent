@@ -19,9 +19,10 @@ def update_timestamp():
         f.write(now_str)
 
 def fetch_live_leads():
-    """Hits live RSS feeds and limits results to Top 10 per feed."""
+    """Broader search queries to capture more technical SIEM/SOAR leads."""
     feeds = [
-        "https://www.upwork.com/ab/feed/jobs/rss?q=(SIEM+OR+SOAR+OR+QRadar+OR+Sentinel+OR+Splunk+OR+Wazuh+OR+XSOAR+OR+XSIAM+OR+%22Playbook+Developer%22)&sort=recency",
+        # Expanded Upwork query to include SOC and Detection Engineering
+        "https://www.upwork.com/ab/feed/jobs/rss?q=(SIEM+OR+SOAR+OR+QRadar+OR+Sentinel+OR+Splunk+OR+Wazuh+OR+XSOAR+OR+XSIAM+OR+%22Detection+Engineer%22+OR+%22SOC+Automation%22)&sort=recency",
         "https://weworkremotely.com/categories/remote-security-jobs.rss",
         "https://remoteok.com/remote-security-jobs.rss"
     ]
@@ -31,12 +32,12 @@ def fetch_live_leads():
         try:
             print(f"📡 Polling feed: {url[:40]}...")
             feed = feedparser.parse(url)
-            # LIMIT: Only take the first 10 entries from each feed
+            # LIMIT: Top 10 per feed for freshness
             for entry in feed.entries[:10]:
                 found_jobs.append({
                     "title": entry.title,
                     "source": entry.link,
-                    "snippet": entry.description[:800] 
+                    "snippet": entry.description[:1000] # Increased context for AI
                 })
         except Exception as e:
             print(f"Feed error: {e}")
@@ -44,18 +45,18 @@ def fetch_live_leads():
     return found_jobs
 
 def get_ai_analysis(title, snippet):
-    """Refined prompt to filter out Leadership/HR and focus on SIEM/SOAR."""
+    """Aggressive filtering for Technical SIEM/SOAR roles only."""
     prompt = f"""
-    Analyze this technical job:
+    Analyze this job posting for a SIEM/SOAR Specialist:
     Title: {title}
     Details: {snippet}
     
     CRITERIA:
-    1. Score (0-100): High for technical SIEM/SOAR/Detection Engineering. 
-    2. RED FLAG: If title contains 'HR', 'Leadership', 'GTM', 'Sourcing', or 'Compliance', score must be below 50.
-    3. Bid Structure: Technical Hook -> Expertise (Wazuh/Sentinel/Splunk) -> Discovery Question.
+    1. Score (0-100): High ONLY for hands-on technical roles (Engineers, Developers, Architects).
+    2. IMMEDIATE FAIL (Score < 20): If the job is for 'Recruiter', 'Sourcer', 'HR', 'GTM', 'Sales', or 'Compliance'.
+    3. TARGET SKILLS: QRadar, Sentinel, Splunk, Wazuh, Playbook development, API integration.
     
-    Output STRICTLY in JSON: {{"score": 75, "bid": "Expert pitch..."}}
+    Output STRICTLY in JSON: {{"score": 85, "bid": "Technical pitch..."}}
     """
     try:
         response = model.generate_content(prompt)
@@ -67,7 +68,7 @@ def get_ai_analysis(title, snippet):
 def process_and_save(raw_leads):
     os.makedirs('data', exist_ok=True)
     
-    # ENSURE FILE EXISTS: Create empty CSV if it doesn't exist to prevent Git errors
+    # Self-healing file check
     if not os.path.exists(CSV_FILE):
         pd.DataFrame(columns=["title", "source", "weightage_score", "is_genuine", "draft", "found_at"]).to_csv(CSV_FILE, index=False)
 
@@ -84,8 +85,8 @@ def process_and_save(raw_leads):
             
         analysis = get_ai_analysis(lead['title'], lead['snippet'])
         
-        # INCREASED BAR: Only save if score is 60+ to ensure quality
-        if analysis.get('score', 0) >= 60: 
+        # QUALITY BAR: Back to 75 to eliminate "Sr Sourcer" and "HR" noise
+        if analysis.get('score', 0) >= 75: 
             final_data.append({
                 "title": lead['title'],
                 "source": lead['source'],
@@ -98,8 +99,11 @@ def process_and_save(raw_leads):
     if final_data:
         new_df = pd.DataFrame(final_data)
         combined = pd.concat([existing_df, new_df], ignore_index=True)
-        combined.tail(100).to_csv(CSV_FILE, index=False)
-        print(f"🚀 Saved {len(final_data)} high-quality leads.")
+        # Keep the best 100 historical leads
+        combined.sort_values(by="weightage_score", ascending=False).head(100).to_csv(CSV_FILE, index=False)
+        print(f"🚀 Success: {len(final_data)} technical leads found.")
+    else:
+        print("Done. No new high-quality technical leads found in this crawl.")
 
 if __name__ == "__main__":
     try:
