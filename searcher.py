@@ -69,10 +69,10 @@ def fetch_cyber_leads():
                             "source": r['href'],
                             "snippet": r['body']
                         })
-                time.sleep(1) 
+                time.sleep(5) 
             except Exception as e:
                 print(f"Search Error: {e}")
-            time.sleep(3)
+                time.sleep(5)
     return found_jobs
 
 def process_and_save(raw_leads):
@@ -123,6 +123,12 @@ def process_and_save(raw_leads):
         new_df.to_csv(CSV_FILE, index=False)
     
     print(f"✅ Successfully added {len(final_data)} new AI-scored leads.")
+
+    # Add this at the very end of process_and_save()
+    os.makedirs('data', exist_ok=True)
+    with open('data/last_run.txt', 'w') as f:
+        f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    print("Timestamp updated.")
 
 if __name__ == "__main__":
     leads = fetch_cyber_leads()
