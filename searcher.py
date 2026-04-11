@@ -1,4 +1,9 @@
-import os, sys, pandas as pd, feedparser, json, google.generativeai as genai
+import os
+import sys
+import pandas as pd
+import feedparser
+import json
+import google.generativeai as genai
 from datetime import datetime
 import pytz
 
@@ -7,8 +12,34 @@ IST = pytz.timezone('Asia/Kolkata')
 CSV_FILE = "data/jobs.csv"
 os.makedirs("data", exist_ok=True)
 
+# API Setup
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 model = genai.GenerativeModel('gemini-1.5-flash')
+
+def load_and_repair_csv():
+    """Initializes or repairs the CSV to ensure all columns exist."""
+    # Define the official schema required by both the script and UI
+    headers = ['id', 'title', 'source', 'weightage_score', 'service', 'status', 'draft', 'last_scanned']
+    
+    if not os.path.exists(CSV_FILE):
+        df = pd.DataFrame(columns=headers)
+        df.to_csv(CSV_FILE, index=False)
+        return df
+    
+    try:
+        df = pd.read_csv(CSV_FILE)
+        # Ensure 'status' and 'service' exist to prevent GitHub Action crashes
+        if 'status' not in df.columns:
+            df['status'] = 'New'
+        if 'service' not in df.columns:
+            df['service'] = 'General'
+        
+        # Fill any missing data in required columns
+        df['status'] = df['status'].fillna('New')
+        df['service'] = df['service'].fillna('General')
+        return df
+    except Exception:
+        return pd.DataFrame(columns=headers)
 
 def get_ai_analysis(title, desc, service_type):
     prompt = f"""
@@ -30,17 +61,20 @@ def get_ai_analysis(title, desc, service_type):
         clean_text = response.text.strip().replace('```json', '').replace('```', '')
         result = json.loads(clean_text)
         
-        # +20 boost for target high-value cybersecurity stack
-        boost_keywords = ["sentinel", "wazuh", "soar", "siem", "splunk"]
+        # Boost for high-value cybersecurity stack
+        boost_keywords = ["sentinel", "wazuh", "soar", "siem", "splunk", "qradar"]
         if any(kw in title.lower() for kw in boost_keywords):
             result['score'] = min(100, result['score'] + 20)
         return result
     except:
-        return {"score": 50, "analysis": "Fallback", "pitch": f"Expert {service_type} support for {title}."}
+        return {"score": 50, "analysis": "Fallback", "pitch": f"Providing expert {service_type} engineering for {title}."}
 
 def main():
     service = sys.argv[1] if len(sys.argv) > 1 else "Cyber Security"
     print(f"🚀 Freelancing Job Hunter: Scanning for {service}...")
+    
+    # Load and repair data BEFORE starting search
+    existing_df = load_and_repair_csv()
     
     queries = {
         "Cyber Security": "SIEM+SOAR+Wazuh+Sentinel+Splunk",
@@ -53,6 +87,7 @@ def main():
     feed = feedparser.parse(f"https://www.upwork.com/ab/feed/jobs/rss?q={query}")
     new_found_leads = []
     
+    # Process top 15 results
     for entry in feed.entries[:15]:
         analysis = get_ai_analysis(entry.title, entry.description, service)
         if analysis['score'] >= 40:
@@ -67,15 +102,20 @@ def main():
                 "last_scanned": datetime.now(IST).strftime("%Y-%m-%d %I:%M %p")
             })
 
-    if os.path.exists(CSV_FILE):
-        existing_df = pd.read_csv(CSV_FILE)
-        other_leads = existing_df[(existing_df['status'] != 'New') | (existing_df['service'] != service)]
-        final_df = pd.concat([other_leads, pd.DataFrame(new_found_leads)]).drop_duplicates(subset='id', keep='last')
+    # Filter out old leads for this specific niche to avoid duplicates
+    # This logic now has guaranteed 'status' and 'service' columns
+    other_leads = existing_df[
+        (existing_df['status'] != 'New') | 
+        (existing_df['service'] != service)
+    ]
+    
+    if new_found_leads:
+        new_df = pd.DataFrame(new_found_leads)
+        final_df = pd.concat([other_leads, new_df]).drop_duplicates(subset='id', keep='last')
+        final_df.to_csv(CSV_FILE, index=False)
+        print(f"✅ Saved {len(new_found_leads)} leads for {service}.")
     else:
-        final_df = pd.DataFrame(new_found_leads)
-
-    final_df.to_csv(CSV_FILE, index=False)
-    print(f"✅ Scan Complete for {service}.")
+        print(f"⚠️ No high-relevance leads found for {service} in this scan.")
 
 if __name__ == "__main__":
     main()
