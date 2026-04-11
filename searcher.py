@@ -23,7 +23,7 @@ def get_ai_analysis(title, snippet):
     3. Write a 3-sentence high-impact bid as a Senior Security Engineer.
 
     Return ONLY a valid JSON object:
-    {{"score": 85, "is_genuine": true, "bid": "..."}}
+    {{"score": 75, "is_genuine": true, "bid": "..."}}
     """
     try:
         response = model.generate_content(prompt)
@@ -72,7 +72,7 @@ def fetch_cyber_leads():
                 time.sleep(5) 
             except Exception as e:
                 print(f"Search Error: {e}")
-                time.sleep(5)
+                time.sleep(15)
     return found_jobs
 
 def process_and_save(raw_leads):
