@@ -37,43 +37,45 @@ def get_ai_analysis(title, snippet):
 def fetch_cyber_leads():
     """Finds a wider range of SOC/SIEM jobs across multiple platforms."""
     queries = [
-        # Platform Specific Broad Search
-        'site:upwork.com ("SIEM" OR "SOAR" OR "SOC Analyst") "Remote"',
-        'site:freelancer.com ("Sentinel" OR "Splunk" OR "QRadar" OR "Wazuh" OR "XSOAR" OR "XSIAM" OR "Automation Playbook")',
-        'site:guru.com ("Cyber Security" OR "Information Security")',
+       # Upwork: High-intent leads
+        'site:upwork.com ("SIEM" OR "SOAR" OR "SOC" OR "Log Management") "Remote"',
+        'site:upwork.com ("Splunk" OR "Sentinel" OR "Wazuh" OR "ELK" OR "XSOAR" OR "Automation") "Freelance"',
         
-        # Skill-Based Niche Search
-        'site:upwork.com "Splunk Engineer" OR "Splunk Admin"',
-        'site:upwork.com "Microsoft Sentinel" OR "Azure Sentinel"',
-        'site:upwork.com "Wazuh" OR "ELK Stack" OR "OpenSearch"',
+        # Freelancer & Guru: Broader contract market
+        'site:freelancer.com ("Cybersecurity" OR "Information Security") "Remote"',
+        'site:guru.com ("Security Analyst" OR "Firewall" OR "Compliance")',
         
-        # Role-Based Search
-        'site:upwork.com "Security Operations Center" OR "SOC Analyst"',
-        'site:upwork.com "Detection Engineer" OR "Threat Hunting"',
-        
-        # International / Generic Freelance
-        'site:peopleperhour.com "SIEM" OR "Security"',
-        'site:remoteok.com "Security Engineer"'
+        # LinkedIn & Boards: (Often higher quality)
+        'site:linkedin.com/jobs "SIEM" "Contract"',
+        'site:simplyhired.com "Security Operations Center" "Remote"'
     ]
     found_jobs = []
     MAX_TOTAL_RESULTS = 5
     
     with DDGS() as ddgs:
         for query in queries:
+            if len(found_jobs) >= MAX_TOTAL_RESULTS:
+                break
             try:
-                results = ddgs.text(query, timelimit='d', max_results=5)
+                # timelimit='w' (week) ensures we find jobs even if today was quiet
+                results = ddgs.text(query, timelimit='w', max_results=8)
                 for r in results:
-                    if any(path in r['href'] for path in ["/jobs/", "/projects/"]):
+                    # Filter for actual job/project pages
+                    if any(x in r['href'] for x in ["/jobs/", "/projects/", "/view/"]):
                         found_jobs.append({
                             "title": r['title'].split(" - ")[0],
                             "source": r['href'],
                             "snippet": r['body']
                         })
+                
+                # Stay safe from IP blocks
                 time.sleep(5) 
+                
             except Exception as e:
-                print(f"Search Error: {e}")
-                time.sleep(15)
-    return found_jobs
+                print(f"Error on {query}: {e}")
+                time.sleep(10) 
+                
+    return found_jobs[:MAX_TOTAL_RESULTS]
 
 def process_and_save(raw_leads):
     # Ensure folder exists immediately
