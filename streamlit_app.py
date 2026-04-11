@@ -46,64 +46,73 @@ with st.sidebar:
 if os.path.exists(CSV_FILE):
     df = pd.read_csv(CSV_FILE)
     
-    # Map CSV headers to UI labels
-    mapping = {'weightage_score': 'score', 'found_at': 'last_scanned', 'is_genuine': 'status'}
-    df = df.rename(columns=mapping)
+    # SAFETY: Ensure critical columns exist before UI processing to avoid KeyErrors
+    if 'is_genuine' not in df.columns:
+        df['is_genuine'] = 'New'
+    if 'service' not in df.columns:
+        df['service'] = target_niche
+    
+    if df.empty:
+        st.info("The local database is currently empty. Run a manual scan to populate it.")
+    else:
+        # Map CSV headers to UI labels
+        mapping = {'weightage_score': 'score', 'found_at': 'last_scanned', 'is_genuine': 'status'}
+        df = df.rename(columns=mapping)
 
-    # Tabs
-    tab1, tab2 = st.tabs(["🆕 New Discovery", "✅ Applied & Archived"])
+        # Tabs
+        tab1, tab2 = st.tabs(["🆕 New Discovery", "✅ Applied & Archived"])
 
-    with tab1:
-        # Filter for non-applied leads for this niche
-        mask = (df['status'] != 'Applied') & (df['service'] == target_niche)
-        new_leads = df[mask].copy()
+        with tab1:
+            # Filter for non-applied leads for this niche
+            mask = (df['status'] != 'Applied') & (df['service'] == target_niche)
+            new_leads = df[mask].copy()
 
-        if not new_leads.empty:
-            st.info("💡 Check the box in the 'Apply' column to move a lead to the Archive.")
-            
-            # Add a temporary boolean column for the editor
-            new_leads['Apply'] = False
-            
-            # Use data_editor for interactivity
-            edited_df = st.data_editor(
-                new_leads[['Apply', 'score', 'title', 'source', 'status', 'last_scanned']],
-                column_config={
-                    "Apply": st.column_config.CheckboxColumn("Apply?", default=False),
-                    "source": st.column_config.LinkColumn("Listing"),
-                    "score": st.column_config.NumberColumn(format="%d%%")
-                },
-                disabled=["score", "title", "source", "status", "last_scanned"],
-                hide_index=True,
-                use_container_width=True,
-                key="new_leads_editor"
-            )
+            if not new_leads.empty:
+                st.info("💡 Check the box in the 'Apply' column to move a lead to the Archive.")
+                
+                # Add a temporary boolean column for the editor
+                new_leads['Apply'] = False
+                
+                # Use data_editor for interactivity
+                edited_df = st.data_editor(
+                    new_leads[['Apply', 'score', 'title', 'source', 'status', 'last_scanned']],
+                    column_config={
+                        "Apply": st.column_config.CheckboxColumn("Apply?", default=False),
+                        "source": st.column_config.LinkColumn("Listing"),
+                        "score": st.column_config.NumberColumn(format="%d%%")
+                    },
+                    disabled=["score", "title", "source", "status", "last_scanned"],
+                    hide_index=True,
+                    use_container_width=True,
+                    key="new_leads_editor"
+                )
 
-            # Check if any checkboxes were ticked
-            if edited_df['Apply'].any():
-                applied_ids = edited_df[edited_df['Apply'] == True]['source'].tolist()
-                # Update main dataframe status
-                df.loc[df['source'].isin(applied_ids), 'status'] = 'Applied'
-                save_changes(df)
-                st.success(f"Moved {len(applied_ids)} leads to Applied & Archived!")
-                st.rerun()
-        else:
-            st.write(f"No new leads found for {target_niche}.")
+                # Check if any checkboxes were ticked
+                if edited_df['Apply'].any():
+                    applied_ids = edited_df[edited_df['Apply'] == True]['source'].tolist()
+                    # Update main dataframe status
+                    df.loc[df['source'].isin(applied_ids), 'status'] = 'Applied'
+                    save_changes(df)
+                    st.success(f"Moved {len(applied_ids)} leads to Applied & Archived!")
+                    st.rerun()
+            else:
+                st.write(f"No new leads found for {target_niche}.")
 
-    with tab2:
-        archived = df[df['status'] == 'Applied']
-        if not archived.empty:
-            st.dataframe(
-                archived[['score', 'title', 'source', 'last_scanned']], 
-                column_config={"source": st.column_config.LinkColumn("Listing")},
-                use_container_width=True, 
-                hide_index=True
-            )
-            
-            if st.button("🗑️ Purge Archived Leads"):
-                df = df[df['status'] != 'Applied']
-                save_changes(df)
-                st.rerun()
-        else:
-            st.write("No leads have been marked as 'Applied' yet.")
+        with tab2:
+            archived = df[df['status'] == 'Applied']
+            if not archived.empty:
+                st.dataframe(
+                    archived[['score', 'title', 'source', 'last_scanned']], 
+                    column_config={"source": st.column_config.LinkColumn("Listing")},
+                    use_container_width=True, 
+                    hide_index=True
+                )
+                
+                if st.button("🗑️ Purge Archived Leads"):
+                    df = df[df['status'] != 'Applied']
+                    save_changes(df)
+                    st.rerun()
+            else:
+                st.write("No leads have been marked as 'Applied' yet.")
 else:
-    st.warning("Database empty. Run a scan to find leads.")
+    st.warning("No database found. Please run a manual scan to initialize jobs.csv.")
