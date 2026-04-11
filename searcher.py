@@ -6,7 +6,7 @@ import json
 import google.generativeai as genai
 from datetime import datetime
 import pytz
-from urllib.parse import quote  # Needed to fix the InvalidURL error
+from urllib.parse import quote
 
 # Configuration
 IST = pytz.timezone('Asia/Kolkata')
@@ -28,89 +28,81 @@ def load_and_repair_csv():
     
     try:
         df = pd.read_csv(CSV_FILE)
-        
-        # Standardize naming if older columns exist
+        # Standardize naming for UI compatibility
         if 'status' in df.columns and 'is_genuine' not in df.columns:
             df = df.rename(columns={'status': 'is_genuine'})
         if 'last_scanned' in df.columns and 'found_at' not in df.columns:
             df = df.rename(columns={'last_scanned': 'found_at'})
             
-        # Force injection of missing required columns
         for col in headers:
             if col not in df.columns:
-                if col == 'is_genuine':
-                    df[col] = "New"
-                elif col == 'service':
-                    df[col] = "General"
-                else:
-                    df[col] = ""
-        
+                df[col] = "New" if col == 'is_genuine' else ("General" if col == 'service' else "")
         return df
-    except Exception:
+    except:
         return pd.DataFrame(columns=headers)
 
 def get_ai_analysis(title, desc, service_type):
     """Uses Gemini to score and pitch the job."""
     prompt = f"""
-    Act as a Senior Technical Lead for an Agency. 
-    Category: {service_type}
-    Job: {title}
-    Description: {desc}
+    Act as a Senior Technical Lead. 
+    Category: {service_type} | Job: {title} | Description: {desc}
 
     Task:
-    1. Score relevance (0-100). Focus on technical individual contributor work. 
-    2. Write a 2-3 sentence 'pitch' starting with a professional hook. 
-       Reference a specific tool (e.g., Wazuh, Sentinel, Splunk, Python).
+    1. Score relevance (0-100) for a technical individual contributor.
+    2. Write a 2-sentence professional pitch referencing technical tools.
 
     Return ONLY JSON:
-    {{ "score": 85, "analysis": "fit explanation", "pitch": "tailored message" }}
+    {{ "score": 85, "analysis": "...", "pitch": "..." }}
     """
     try:
         response = model.generate_content(prompt)
         clean_text = response.text.strip().replace('```json', '').replace('```', '')
         result = json.loads(clean_text)
         
-        # Keyword boost for Cybersecurity
-        boost_keywords = ["sentinel", "wazuh", "soar", "siem", "splunk", "qradar"]
-        if any(kw in title.lower() for kw in boost_keywords):
+        # Priority keyword boost for Security roles
+        security_keywords = ["sentinel", "wazuh", "soar", "siem", "splunk", "soc", "incident"]
+        if any(kw in title.lower() for kw in security_keywords):
             result['score'] = min(100, result['score'] + 20)
         return result
     except:
-        return {"score": 50, "analysis": "Fallback", "pitch": f"Expert {service_type} engineering for {title}."}
+        return {"score": 50, "analysis": "Fallback", "pitch": f"Technical support for {title}."}
 
 def main():
-    service = sys.argv[1] if len(sys.argv) > 1 else "Cyber Security"
+    service = sys.argv[1] if len(sys.argv) > 1 else "SOC"
     print(f"🚀 Scanning for {service}...")
     
     existing_df = load_and_repair_csv()
     
+    # Define Niche Categories
     queries = {
-        "Cyber Security": '("SIEM" OR "SOAR" OR "Wazuh" OR "Sentinel" OR "Splunk" OR "XSOAR" OR "SOC" OR "Cybersecurity Engineer" OR "Automation Engineer" OR "SOC Analyst" OR "SOC Engineer" OR "Cyber Security Architect")',
-        "AI Agent Builder": '("LLM" OR "LangChain" OR "AutoGPT" OR "OpenAI" OR "AI Agent" OR "AI" OR "Automation")',
-        "App Development": '("Flutter" OR "React Native" OR "iOS" OR "Android")',
+        "Cyber Security": '("SIEM" OR "SOAR" OR "Wazuh" OR "Sentinel" OR "Splunk" OR "XSOAR" OR "Automation")',
+        "SOC": '("SOC Analyst" OR "SOC Engineer" OR "SOC" OR "Security Operation Center Architect" OR "SOC Architect")',
+        "AI Agent Builder": '("LLM" OR "LangChain" OR "AI Agent" OR "AutoGPT")',
         "Software Developer": '("Python" OR "Backend" OR "FastAPI" OR "Microservices")'
     }
     
-    raw_query = queries.get(service, "Python OR Backend")
-    
-    # FIX: Encode the query to handle quotes, spaces, and OR logic in the URL
+    # Build URL with safe encoding
+    raw_query = queries.get(service, "Python")
     encoded_query = quote(raw_query)
     rss_url = f"https://www.upwork.com/ab/feed/jobs/rss?q={encoded_query}"
     
+    print(f"📡 Requesting: {rss_url}")
     feed = feedparser.parse(rss_url)
+    
+    if hasattr(feed, 'bozo_exception') and feed.bozo_exception:
+        # Note: 'not well-formed' is often a transient Upwork RSS error.
+        print(f"⚠️ RSS Feed Note: {feed.bozo_exception}")
+
     new_found_leads = []
     
-    # Check for feed errors
-    if hasattr(feed, 'bozo_exception') and feed.bozo_exception:
-        print(f"❌ RSS Feed Error: {feed.bozo_exception}")
-        return
-
-    for entry in feed.entries[:10]:
+    for entry in feed.entries[:15]:
+        # Check for duplicates using the link as a unique ID
         if not existing_df.empty and str(entry.link) in existing_df['id'].astype(str).values:
             continue
 
         analysis = get_ai_analysis(entry.title, entry.description, service)
-        if analysis['score'] >= 40:
+        
+        if analysis['score'] >= 35:
             new_found_leads.append({
                 "id": entry.link, 
                 "title": entry.title,
@@ -128,7 +120,7 @@ def main():
         final_df.to_csv(CSV_FILE, index=False)
         print(f"✅ Successfully added {len(new_found_leads)} new leads.")
     else:
-        print(f"⚠️ No high-relevance new leads found for {service} in this scan.")
+        print(f"⚠️ No new leads passed the relevance filter for {service}.")
 
 if __name__ == "__main__":
     main()
