@@ -97,16 +97,19 @@ def get_ai_score(title, snippet):
     Focuses on keyword matching rather than strict exclusion.
     """
     prompt = f"""
-    Analyze this job for a SIEM/SOAR/Detection Engineer.
+    You are a specialized recruitment AI for SIEM/SOAR/Detection Engineering.
     Title: {title}
     Details: {snippet}
 
-    SCORING RULES:
-    - 80-100: Mentions Splunk, XSOAR, Sentinel, QRadar, or Wazuh.
-    - 50-79: General Security, Python Automation, or SOC Engineer roles.
-    - 0: Strictly Management or HR roles. (Relaxing Red Flags for now).
+    SCORING CRITERIA:
+    - 90-100: Technical IC roles focusing on Splunk, Sentinel, Wazuh, or SOAR automation.
+    - 70-89: General Cybersecurity Engineer, SOC Analyst (L2/L3), or Cloud Security roles.
+    - 50-69: Python Developer roles that mention security, automation, or API integration.
+    - 0-49: Management, HR, Sales, or non-technical roles.
 
-    Return ONLY valid JSON: {{"score": 90, "reason": "Reasoning", "bid": "Short draft"}}
+    MANDATORY: If the title contains "Cyber" or "Security" and is NOT a management role, the score MUST be at least 70.
+    
+    Return ONLY JSON: {{"score": 85, "reason": "...", "bid": "..."}}
     """
     try:
         response = model.generate_content(prompt)
