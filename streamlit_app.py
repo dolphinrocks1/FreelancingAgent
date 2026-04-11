@@ -2,132 +2,91 @@ import streamlit as st
 import pandas as pd
 import subprocess
 import os
-
-# App Branding
-st.set_page_config(page_title="Freelancing Job Hunter", layout="wide", page_icon="💼")
+from datetime import datetime
 
 CSV_FILE = "data/jobs.csv"
 
 def run_scan(niche):
-    """Executes the searcher agent and captures errors for the UI."""
-    with st.spinner(f"Freelancing Job Hunter is scouting {niche}..."):
-        try:
-            # Capturing output allows us to see the exact crash reason in the UI
-            result = subprocess.run(
-                ["python", "searcher.py", niche], 
-                capture_output=True, 
-                text=True, 
-                check=True
-            )
-            st.toast(f"Fresh leads found for {niche}!", icon="🎯")
-        except subprocess.CalledProcessError as e:
-            st.error("The searcher agent crashed. Check the error details below:")
-            # Display the actual traceback to help with debugging
-            st.code(e.stderr if e.stderr else e.stdout)
-
-def load_and_repair_data():
-    """Loads data and ensures all required columns exist to prevent KeyErrors."""
-    if not os.path.exists(CSV_FILE):
-        return pd.DataFrame()
-    
+    """Runs searcher.py with a progress bar and error handling."""
+    progress_bar = st.progress(0, text="Initializing Searcher Agent...")
     try:
-        df = pd.read_csv(CSV_FILE)
+        # Use sys.executable to ensure we use the same environment as Streamlit
+        import sys
+        progress_bar.progress(30, text=f"🔍 Scanning Upwork for {niche}...")
         
-        # Define necessary columns and their default values
-        required_schema = {
-            'weightage_score': 0, 
-            'draft': 'No pitch generated', 
-            'status': 'New', 
-            'service': 'General',
-            'last_scanned': 'N/A',
-            'title': 'Unknown Title',
-            'source': '#'
-        }
-        
-        # Automatically add missing columns so the UI doesn't crash
-        for col, default_val in required_schema.items():
-            if col not in df.columns:
-                df[col] = default_val
-        
-        # Map internal CSV names to clean UI names
-        df = df.rename(columns={'weightage_score': 'score', 'draft': 'pitch'})
-        return df
-    except Exception as e:
-        st.error(f"Failed to load jobs database: {e}")
-        return pd.DataFrame()
-
-# --- UI HEADER ---
-st.title("💼 Freelancing Job Hunter")
-
-# --- SIDEBAR & AUTO-SCAN ---
-with st.sidebar:
-    st.header("Search Settings")
-    niche_options = ["Cyber Security", "AI Agent Builder", "App Developer", "Software Developer"]
-    
-    # Selecting a niche triggers the scan automatically
-    current_niche = st.selectbox(
-        "Target Niche", 
-        niche_options,
-        key="niche_selector",
-        on_change=lambda: run_scan(st.session_state.niche_selector)
-    )
-    
-    if st.button("Force Manual Scan"):
-        run_scan(current_niche)
-        st.rerun()
-
-# Load the repaired data
-df = load_and_repair_data()
-
-# Summary Metrics
-if not df.empty:
-    m1, m2 = st.columns(2)
-    m1.metric("Total Leads", len(df))
-    m2.metric("High Match (70%+)", len(df[df['score'] >= 70]))
-
-# --- DASHBOARD TABS ---
-tab1, tab2 = st.tabs(["🆕 New Discovery", "✅ Applied & Archived"])
-
-with tab1:
-    # Add a reset button to clear out the old, tagless leads
-    if st.button("🗑️ Clear All Old Leads"):
-        pd.DataFrame(columns=['id', 'title', 'source', 'weightage_score', 'service', 'status', 'draft', 'last_scanned']).to_csv(CSV_FILE, index=False)
-        st.success("Database wiped! Run a new scan now.")
-        st.rerun()
-
-    if not df.empty:
-        # Improved Filter: Show leads for this niche OR leads that are missing a service tag
-        active = df[
-            (df['status'] == 'New') & 
-            ((df['service'] == current_niche) | (df['service'].isna()) | (df['service'] == ''))
-        ].copy()
-        
-        if not active.empty:
-            st.data_editor(
-                active[['title', 'source', 'score', 'pitch', 'last_scanned']],
-                # ... keep your existing column_config ...
-                use_container_width=True
-            )
-        else:
-            st.info(f"No 'New' leads found for {current_niche}. Try 'Force Manual Scan' or change the niche.")
-
-with tab2:
-    applied_leads = df[df['status'] == 'Applied'].copy()
-    if not applied_leads.empty:
-        applied_leads['Remove'] = False
-        cleanup = st.data_editor(
-            applied_leads[['Remove', 'title', 'source', 'score', 'last_scanned']],
-            column_config={
-                "Remove": st.column_config.CheckboxColumn("Delete?"),
-                "source": st.column_config.LinkColumn("View")
-            },
-            hide_index=True, use_container_width=True, key="applied_table"
+        result = subprocess.run(
+            [sys.executable, "searcher.py", niche], 
+            capture_output=True, 
+            text=True, 
+            check=True
         )
         
-        if cleanup['Remove'].any():
-            to_delete = cleanup[cleanup['Remove'] == True]['title'].tolist()
-            df = df[~df['title'].isin(to_delete)]
-            df.rename(columns={'score': 'weightage_score', 'pitch': 'draft'}).to_csv(CSV_FILE, index=False)
+        progress_bar.progress(100, text="✅ Scan Complete!")
+        st.success(f"Searcher output: {result.stdout.splitlines()[-1]}")
+    except subprocess.CalledProcessError as e:
+        st.error(f"Searcher crashed: {e.stderr}")
+    finally:
+        # Give the user a moment to see the 100% before refreshing
+        import time
+        time.sleep(1)
+        st.rerun()
+
+st.title("💼 Freelancing Job Hunter")
+
+# --- Sidebar Settings ---
+with st.sidebar:
+    st.header("Search Settings")
+    current_niche = st.selectbox("Target Niche", ["Cyber Security", "AI Agent Builder", "Software Developer"])
+    if st.button("🚀 Force Manual Scan"):
+        run_scan(current_niche)
+    
+    if st.button("🗑️ Clear Database"):
+        if os.path.exists(CSV_FILE):
+            os.remove(CSV_FILE)
+            st.success("Database cleared!")
             st.rerun()
+
+# --- Main Dashboard ---
+if os.path.exists(CSV_FILE):
+    df = pd.read_csv(CSV_FILE)
+    
+    # Ensure columns match what searcher.py produces
+    # We normalize names here to ensure the UI doesn't break
+    col_map = {'weightage_score': 'score', 'is_genuine': 'status'}
+    df = df.rename(columns=col_map)
+
+    # Metrics
+    total_leads = len(df)
+    high_match = len(df[df['score'] >= 70]) if 'score' in df.columns else 0
+    
+    col1, col2, col3 = st.columns(3)
+    col1.metric("Total Leads", total_leads)
+    col2.metric("High Match (70%+)", high_match)
+    
+    if 'last_scanned' in df.columns:
+        # Sort by date to keep newest results on top
+        df['last_scanned_dt'] = pd.to_datetime(df['last_scanned'], errors='coerce')
+        df = df.sort_values(by='last_scanned_dt', ascending=False)
+        last_time = df['last_scanned'].iloc[0]
+        col3.metric("Last Scan", str(last_time))
+
+    # Display Table
+    st.subheader(f"📡 New Leads for {current_niche}")
+    # Filter for current niche
+    filtered_df = df[df['service'] == current_niche] if 'service' in df.columns else df
+    
+    if not filtered_df.empty:
+        st.dataframe(
+            filtered_df[['score', 'title', 'source', 'draft', 'last_scanned']],
+            column_config={
+                "score": st.column_config.ProgressColumn("Match", format="%d%%", min_value=0, max_value=100),
+                "source": st.column_config.LinkColumn("Listing"),
+                "draft": "Proposed Pitch"
+            },
+            hide_index=True,
+            use_container_width=True
+        )
     else:
-        st.info("Leads you mark as 'Applied' will show up here for archiving.")
+        st.info("No leads found for this niche yet. Click 'Force Manual Scan'.")
+else:
+    st.warning("No data found. Run your first scan from the sidebar.")
