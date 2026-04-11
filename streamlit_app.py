@@ -2,39 +2,46 @@ import streamlit as st
 import pandas as pd
 import os
 import subprocess
-from datetime import datetime
 
 # --- Configuration ---
 CSV_FILE = "data/jobs.csv"
+REQUIRED_COLS = ['id', 'title', 'source', 'weightage_score', 'service', 'is_genuine', 'draft', 'found_at']
 
 st.set_page_config(page_title="Scout HQ", page_icon="💼", layout="wide")
 
 def load_data():
-    if os.path.exists(CSV_FILE):
-        df = pd.read_csv(CSV_FILE)
-        # Ensure 'id' is string to prevent scientific notation in tables
-        df['id'] = df['id'].astype(str)
-        return df
-    return pd.DataFrame()
+    if not os.path.exists(CSV_FILE):
+        return pd.DataFrame(columns=REQUIRED_COLS)
+    
+    df = pd.read_csv(CSV_FILE)
+    
+    # REPAIR ENGINE: If a column is missing, add it with default values to prevent KeyError
+    for col in REQUIRED_COLS:
+        if col not in df.columns:
+            if col == 'is_genuine':
+                df[col] = 'New'
+            elif col == 'id':
+                df[col] = range(len(df)) # Fallback IDs
+            else:
+                df[col] = ""
+    
+    df['id'] = df['id'].astype(str)
+    return df
 
 # --- Sidebar ---
 st.sidebar.header("Search Settings")
-
-# UPDATED: Added 'SOC' to the niche selection
 target_niche = st.sidebar.selectbox(
     "Target Niche",
     ["Cyber Security", "SOC", "AI Agent Builder", "Software Developer"]
 )
 
 if st.sidebar.button("🚀 Force Manual Scan"):
-    with st.sidebar.status("Connecting to job feeds..."):
-        # Pass the niche to the searcher script
+    with st.sidebar.status(f"Scanning for {target_niche}..."):
         result = subprocess.run(["python", "searcher.py", target_niche], capture_output=True, text=True)
         if result.returncode == 0:
-            st.sidebar.success("Scan Complete!")
             st.rerun()
         else:
-            st.sidebar.error("The searcher agent crashed.")
+            st.error("Searcher Agent Crashed")
             st.code(result.stderr)
 
 if st.sidebar.button("🗑️ Clear Database"):
@@ -44,38 +51,29 @@ if st.sidebar.button("🗑️ Clear Database"):
 
 # --- Main Dashboard ---
 st.title("💼 Freelancing Job Hunter")
-
 df = load_data()
 
-# Logic check for empty dataframe to prevent IndexErrors
 if not df.empty:
-    # Filter by selected niche and status
+    # Use 'is_genuine' instead of 'status' to match searcher.py
     mask = (df['is_genuine'] != 'Applied') & (df['service'] == target_niche)
     display_df = df[mask].copy()
     
     col1, col2 = st.columns(2)
-    with col1:
-        st.metric("Total Leads", len(display_df))
-    with col2:
-        high_match = len(display_df[display_df['weightage_score'] >= 70])
-        st.metric("High Match (70%+)", high_match)
+    col1.metric("Total Leads", len(display_df))
+    col2.metric("High Match (70%+)", len(display_df[display_df['weightage_score'] >= 70]))
 
-    # UI Tabs
     tab1, tab2 = st.tabs(["🆕 New Discovery", "✅ Applied & Archived"])
 
     with tab1:
         if not display_df.empty:
-            # Sort by highest score first
+            # Note: Changed 'last_scanned' to 'found_at' to match your CSV
             st.table(display_df[['weightage_score', 'title', 'source', 'draft', 'found_at']].sort_values(by='weightage_score', ascending=False))
         else:
-            st.info(f"No leads found for {target_niche} in the local database. Try a manual scan.")
+            st.info(f"No leads in database for {target_niche}. Run a scan!")
 
     with tab2:
         archived = df[df['is_genuine'] == 'Applied']
         if not archived.empty:
             st.table(archived[['title', 'service', 'found_at']])
-        else:
-            st.write("No archived jobs yet.")
-
 else:
-    st.warning("Database is empty. Select a niche and run a manual scan to begin.")
+    st.warning("Database is empty. Run a scan to fetch jobs.")
