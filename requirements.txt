@@ -3,3 +3,5 @@ streamlit
 duckduckgo_search
 beautifulsoup4
 google-generativeai
+ddgs
+requests
