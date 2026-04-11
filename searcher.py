@@ -3,7 +3,7 @@ import time
 import json
 import pandas as pd
 import google.generativeai as genai
-from datetime import datetime
+from datetime import datetime, timedelta
 from duckduckgo_search import DDGS
 
 # 1. Configuration & API Setup
