@@ -13,13 +13,15 @@ genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 def update_timestamp():
-    """Forces an update to the last_run.txt file every single run."""
+    """Adjusts UTC time to IST (UTC+5:30) for your dashboard."""
     os.makedirs('data', exist_ok=True)
-    # Format: Saturday, Apr 11 - 11:15 AM
-    now = datetime.now().strftime("%A, %b %d - %I:%M %p")
+    # Convert UTC to IST
+    ist_time = datetime.now() + timedelta(hours=5, minutes=30)
+    now_str = ist_time.strftime("%A, %b %d - %I:%M %p")
+    
     with open(LAST_RUN_FILE, 'w') as f:
-        f.write(now)
-    print(f"🕒 Timestamp logged: {now}")
+        f.write(now_str)
+    print(f"🕒 Timestamp updated (IST): {now_str}")
 
 def get_ai_analysis(title, snippet):
     """Uses Gemini to score the job and draft a professional bid."""
@@ -43,12 +45,15 @@ def get_ai_analysis(title, snippet):
         return {"score": 50, "is_genuine": True, "bid": "I am interested in this SIEM/SOAR role."}
 
 def fetch_cyber_leads():
-    """Broadened search to increase find rate."""
+    """Broadened to include App/Web/Software development per request."""
     queries = [
-        'site:upwork.com ("SIEM" OR "SOAR" OR "SOC" OR "Sentinel" OR "Splunk" OR "QRadar" OR "qradar" OR "Incident Response" OR "XSOAR") "Remote"',
-        'site:freelancer.com ("Cybersecurity" OR "Security Operations") "Remote"',
-        'site:linkedin.com/jobs "SIEM" "Contract"',
-        'site:simplyhired.com "SOC Analyst" "Remote"'
+        # Original SIEM/SOAR
+        'site:upwork.com ("SIEM" OR "SOAR" OR "SOC") "Remote"',
+        # App & Software Development (New)
+        'site:upwork.com ("Python" OR "Fullstack") "Application Development" "Remote"',
+        'site:freelancer.com ("Software Engineer" OR "Web Developer") "Remote"',
+        'site:guru.com ("Website Building" OR "React" OR "Node.js") "Remote"',
+        'site:simplyhired.com "Software Developer" "Contract" "Remote"'
     ]
     
     found_jobs = []
@@ -57,8 +62,8 @@ def fetch_cyber_leads():
     with DDGS() as ddgs:
         for query in queries:
             try:
-                # Changed timelimit to None to find any recent postings if 'w' is too restrictive
-                results = ddgs.text(query, max_results=8)
+                # Removed timelimit to ensure we get results even if the week is slow
+                results = ddgs.text(query, max_results=10)
                 for r in results:
                     if any(x in r['href'].lower() for x in ["/jobs/", "/projects/", "/view/", "/l/"]):
                         found_jobs.append({
@@ -66,7 +71,7 @@ def fetch_cyber_leads():
                             "source": r['href'],
                             "snippet": r['body']
                         })
-                time.sleep(2) 
+                time.sleep(3) # Respectful delay
             except Exception as e:
                 print(f"Search error: {e}")
                 
