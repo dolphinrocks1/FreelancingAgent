@@ -38,8 +38,8 @@ def fetch_cyber_leads():
     """Finds a wider range of SOC/SIEM jobs across multiple platforms."""
     queries = [
         # Platform Specific Broad Search
-        'site:upwork.com ("SIEM" OR "SOAR" OR "SOC") "Remote"',
-        'site:freelancer.com ("Sentinel" OR "Splunk" OR "QRadar")',
+        'site:upwork.com ("SIEM" OR "SOAR" OR "SOC Analyst") "Remote"',
+        'site:freelancer.com ("Sentinel" OR "Splunk" OR "QRadar" OR "Wazuh" OR "XSOAR" OR "XSIAM" OR "Automation Playbook")',
         'site:guru.com ("Cyber Security" OR "Information Security")',
         
         # Skill-Based Niche Search
@@ -56,7 +56,7 @@ def fetch_cyber_leads():
         'site:remoteok.com "Security Engineer"'
     ]
     found_jobs = []
-    MAX_TOTAL_RESULTS = 15
+    MAX_TOTAL_RESULTS = 5
     
     with DDGS() as ddgs:
         for query in queries:
