@@ -18,8 +18,7 @@ model = genai.GenerativeModel('gemini-1.5-flash')
 
 def load_and_repair_csv():
     """Initializes or repairs the CSV to ensure all columns exist."""
-    # Define the official schema required by both the script and UI
-    headers = ['id', 'title', 'source', 'weightage_score', 'service', 'status', 'draft', 'last_scanned']
+    headers = ['id', 'title', 'source', 'weightage_score', 'service', 'is_genuine', 'draft', 'found_at']
     
     if not os.path.exists(CSV_FILE):
         df = pd.DataFrame(columns=headers)
@@ -28,20 +27,22 @@ def load_and_repair_csv():
     
     try:
         df = pd.read_csv(CSV_FILE)
-        # Ensure 'status' and 'service' exist to prevent GitHub Action crashes
-        if 'status' not in df.columns:
-            df['status'] = 'New'
-        if 'service' not in df.columns:
-            df['service'] = 'General'
-        
-        # Fill any missing data in required columns
-        df['status'] = df['status'].fillna('New')
-        df['service'] = df['service'].fillna('General')
+        # Standardize naming to match existing data
+        if 'status' in df.columns and 'is_genuine' not in df.columns:
+            df = df.rename(columns={'status': 'is_genuine'})
+        if 'last_scanned' in df.columns and 'found_at' not in df.columns:
+            df = df.rename(columns={'last_scanned': 'found_at'})
+            
+        # Ensure all required headers exist
+        for col in headers:
+            if col not in df.columns:
+                df[col] = "New" if col == "is_genuine" else "General"
         return df
     except Exception:
         return pd.DataFrame(columns=headers)
 
 def get_ai_analysis(title, desc, service_type):
+    """Uses Gemini to score and pitch the job."""
     prompt = f"""
     Act as a Senior Technical Lead for an Agency. 
     Category: {service_type}
@@ -61,19 +62,18 @@ def get_ai_analysis(title, desc, service_type):
         clean_text = response.text.strip().replace('```json', '').replace('```', '')
         result = json.loads(clean_text)
         
-        # Boost for high-value cybersecurity stack
+        # Keyword boost for Cybersecurity
         boost_keywords = ["sentinel", "wazuh", "soar", "siem", "splunk", "qradar"]
         if any(kw in title.lower() for kw in boost_keywords):
             result['score'] = min(100, result['score'] + 20)
         return result
     except:
-        return {"score": 50, "analysis": "Fallback", "pitch": f"Providing expert {service_type} engineering for {title}."}
+        return {"score": 50, "analysis": "Fallback", "pitch": f"Expert {service_type} engineering for {title}."}
 
 def main():
     service = sys.argv[1] if len(sys.argv) > 1 else "Cyber Security"
-    print(f"🚀 Freelancing Job Hunter: Scanning for {service}...")
+    print(f"🚀 Scanning for {service}...")
     
-    # Load and repair data BEFORE starting search
     existing_df = load_and_repair_csv()
     
     queries = {
@@ -87,8 +87,12 @@ def main():
     feed = feedparser.parse(f"https://www.upwork.com/ab/feed/jobs/rss?q={query}")
     new_found_leads = []
     
-    # Process top 15 results
-    for entry in feed.entries[:15]:
+    # Process top 10 results to stay within rate limits
+    for entry in feed.entries[:10]:
+        # Skip if ID already exists in database
+        if not existing_df.empty and entry.link in existing_df['id'].values:
+            continue
+
         analysis = get_ai_analysis(entry.title, entry.description, service)
         if analysis['score'] >= 40:
             new_found_leads.append({
@@ -97,24 +101,19 @@ def main():
                 "source": entry.link,
                 "weightage_score": analysis['score'],
                 "service": service,
-                "status": "New", 
+                "is_genuine": "New", 
                 "draft": analysis['pitch'],
-                "last_scanned": datetime.now(IST).strftime("%Y-%m-%d %I:%M %p")
+                "found_at": datetime.now(IST).strftime("%A, %b %d - %I:%M %p")
             })
 
-    # Filter out old leads for this specific niche to avoid duplicates
-    # This logic now has guaranteed 'status' and 'service' columns
-    status_col = 'is_genuine' if 'is_genuine' in existing_df.columns else 'status'
-    other_leads = existing_df[existing_df[status_col] != 'New']
-    ]
-    
     if new_found_leads:
         new_df = pd.DataFrame(new_found_leads)
-        final_df = pd.concat([other_leads, new_df]).drop_duplicates(subset='id', keep='last')
+        # FIX: Preserve ALL existing data, don't filter out by status here
+        final_df = pd.concat([existing_df, new_df]).drop_duplicates(subset='id', keep='last')
         final_df.to_csv(CSV_FILE, index=False)
-        print(f"✅ Saved {len(new_found_leads)} leads for {service}.")
+        print(f"✅ Added {len(new_found_leads)} new leads.")
     else:
-        print(f"⚠️ No high-relevance leads found for {service} in this scan.")
+        print(f"⚠️ No new leads found for {service}.")
 
 if __name__ == "__main__":
     main()
