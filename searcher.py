@@ -146,6 +146,16 @@ def main():
                 "found_at": datetime.now().strftime("%Y-%m-%d %H:%M")
             })
 
+    if not new_data and len(all_raw) > 0:
+        print("💡 No high-matches found. Adding a system-check entry.")
+        new_data.append({
+            "title": "System Check: Scraper Active",
+            "source": "https://github.com",
+            "weightage_score": 1,
+            "is_genuine": "System",
+            "draft": "No matches found in this crawl. Logs show raw leads were processed.",
+            "found_at": datetime.now().strftime("%Y-%m-%d %H:%M")
+        })
     # 4. Save
     if new_data:
         pd.concat([df, pd.DataFrame(new_data)], ignore_index=True).to_csv(CSV_FILE, index=False)
