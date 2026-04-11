@@ -87,10 +87,10 @@ def main():
     existing_df = load_and_repair_csv()
     
     queries = {
-        "Cyber Security": "SIEM+SOAR+Wazuh+Sentinel+Splunk+Cybersecurity Engineer+Automation Engineer+XSOAR+Automation",
-        "AI Agent Builder": "LLM+LangChain+AutoGPT+OpenAI+Automation+AI Agent+AI",
-        "App Development": "Flutter+React+Native+iOS+Android",
-        "Software Developer": "Python+Backend+FastAPI+Microservices"
+        "Cyber Security": '("SIEM" OR "SOAR" OR "Wazuh" OR "Sentinel" OR "Splunk" OR "XSOAR" OR "SOC" OR "Cybersecurity Engineer" OR "Automation Engineer" OR "SOC Analyst" OR "SOC Engineer" OR "Cyber Security Architect")',
+        "AI Agent Builder": '("LLM" OR "LangChain" OR "AutoGPT" OR "OpenAI" OR "AI Agent" OR "AI" OR "Automation")',
+        "App Development": '("Flutter" OR "React Native" OR "iOS" OR "Android")',
+        "Software Developer": '("Python" OR "Backend" OR "FastAPI" OR "Microservices")'
     }
     
     query = queries.get(service, "Python+Developer")
