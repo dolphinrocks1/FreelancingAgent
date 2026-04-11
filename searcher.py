@@ -81,13 +81,13 @@ def process_and_save(raw_leads):
             continue
             
         analysis = get_ai_analysis(lead['title'], lead['snippet'])
-        if analysis.get('score', 0) > 70: # Only keep high-quality leads
+        if analysis.get('score', 0) >= 0: 
             final_data.append({
                 "title": lead['title'],
                 "source": lead['source'],
-                "weightage_score": analysis['score'],
-                "is_genuine": analysis['is_genuine'],
-                "draft": analysis['bid'],
+                "weightage_score": analysis.get('score', 50), # Default to 50 if AI fails
+                "is_genuine": True,
+                "draft": analysis.get('bid', "Drafting pitch..."),
                 "found_at": datetime.now().strftime("%Y-%m-%d %H:%M")
             })
 
