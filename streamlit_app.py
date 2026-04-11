@@ -18,7 +18,7 @@ def load_data():
 
 df = load_data()
 
-st.title("🛰️ Sentinel Lead Intelligence")
+st.title("🛰️ Freelancing Job Hunter")
 
 tab1, tab2 = st.tabs(["🆕 New Discovery", "✅ Applied & Archived"])
 
