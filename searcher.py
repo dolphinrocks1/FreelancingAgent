@@ -24,7 +24,7 @@ def fetch_live_leads():
     # FEEDS: You can add more RSS URLs here as you find them
     feeds = [
         # Upwork: "Cyber Security" & "SIEM" feed (Example URL - see note below)
-        "https://www.upwork.com/ab/feed/jobs/rss?q=%22cyber+security%22+OR+%22SIEM%22+OR+%22SOAR%22",
+        "https://www.upwork.com/ab/feed/jobs/rss?q=cyber%20security,%20siem,%20qradar,%20splunk,%20soar",
         # We Work Remotely: Dev & Security roles
         "https://weworkremotely.com/categories/remote-dev-jobs.rss",
         # Remote OK: Security roles
