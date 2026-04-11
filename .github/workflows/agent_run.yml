@@ -2,7 +2,7 @@ name: Hourly SIEM/SOAR Scout
 
 on:
   schedule:
-    - cron: '0 * * * *'  # Runs at the start of every hour
+    - cron: '0 */3 * * *'  # Runs at the start of every hour
   workflow_dispatch:      # Allows you to run it manually for testing
 
 jobs:
