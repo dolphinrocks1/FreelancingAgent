@@ -17,7 +17,7 @@ genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 def load_and_repair_csv():
-    """Initializes or repairs the CSV to ensure all columns exist."""
+    """Initializes or repairs the CSV to ensure all columns exist for the UI."""
     headers = ['id', 'title', 'source', 'weightage_score', 'service', 'is_genuine', 'draft', 'found_at']
     
     if not os.path.exists(CSV_FILE):
@@ -27,18 +27,26 @@ def load_and_repair_csv():
     
     try:
         df = pd.read_csv(CSV_FILE)
-        # Standardize naming to match existing data
+        
+        # 1. Standardize naming if older columns exist
         if 'status' in df.columns and 'is_genuine' not in df.columns:
             df = df.rename(columns={'status': 'is_genuine'})
         if 'last_scanned' in df.columns and 'found_at' not in df.columns:
             df = df.rename(columns={'last_scanned': 'found_at'})
             
-        # Ensure all required headers exist
+        # 2. Force injection of missing required columns to prevent KeyErrors
         for col in headers:
             if col not in df.columns:
-                df[col] = "New" if col == "is_genuine" else "General"
+                if col == 'is_genuine':
+                    df[col] = "New"
+                elif col == 'service':
+                    df[col] = "General"
+                else:
+                    df[col] = ""
+        
         return df
     except Exception:
+        # If file is unreadable/corrupt, start fresh with headers
         return pd.DataFrame(columns=headers)
 
 def get_ai_analysis(title, desc, service_type):
@@ -71,15 +79,17 @@ def get_ai_analysis(title, desc, service_type):
         return {"score": 50, "analysis": "Fallback", "pitch": f"Expert {service_type} engineering for {title}."}
 
 def main():
+    # Use command line arg or default to Cyber Security
     service = sys.argv[1] if len(sys.argv) > 1 else "Cyber Security"
     print(f"🚀 Scanning for {service}...")
     
+    # Load and repair data BEFORE starting search to prevent filter crashes
     existing_df = load_and_repair_csv()
     
     queries = {
         "Cyber Security": "SIEM+SOAR+Wazuh+Sentinel+Splunk",
         "AI Agent Builder": "LLM+LangChain+AutoGPT+OpenAI+Automation",
-        "App Developer": "Flutter+React+Native+iOS+Android",
+        "App Development": "Flutter+React+Native+iOS+Android",
         "Software Developer": "Python+Backend+FastAPI+Microservices"
     }
     
@@ -87,9 +97,9 @@ def main():
     feed = feedparser.parse(f"https://www.upwork.com/ab/feed/jobs/rss?q={query}")
     new_found_leads = []
     
-    # Process top 10 results to stay within rate limits
+    # Process top 10 results
     for entry in feed.entries[:10]:
-        # Skip if ID already exists in database
+        # Duplicate check
         if not existing_df.empty and entry.link in existing_df['id'].values:
             continue
 
@@ -106,14 +116,15 @@ def main():
                 "found_at": datetime.now(IST).strftime("%A, %b %d - %I:%M %p")
             })
 
+    # Combine data
     if new_found_leads:
         new_df = pd.DataFrame(new_found_leads)
-        # FIX: Preserve ALL existing data, don't filter out by status here
+        # We preserve ALL existing data (including Applied leads) and append new ones
         final_df = pd.concat([existing_df, new_df]).drop_duplicates(subset='id', keep='last')
         final_df.to_csv(CSV_FILE, index=False)
-        print(f"✅ Added {len(new_found_leads)} new leads.")
+        print(f"✅ Successfully added {len(new_found_leads)} new leads.")
     else:
-        print(f"⚠️ No new leads found for {service}.")
+        print(f"⚠️ No high-relevance new leads found for {service} in this scan.")
 
 if __name__ == "__main__":
     main()
