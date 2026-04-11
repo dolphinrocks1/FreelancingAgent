@@ -13,11 +13,13 @@ genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 def update_timestamp():
-    """Requirement: Ensures the UI shows the last time the agent was active."""
+    """Forces an update to the last_run.txt file every single run."""
     os.makedirs('data', exist_ok=True)
+    # Format: Saturday, Apr 11 - 11:15 AM
+    now = datetime.now().strftime("%A, %b %d - %I:%M %p")
     with open(LAST_RUN_FILE, 'w') as f:
-        f.write(datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
-    print(f"🕒 Timestamp updated: {datetime.now().strftime('%H:%M:%S')}")
+        f.write(now)
+    print(f"🕒 Timestamp logged: {now}")
 
 def get_ai_analysis(title, snippet):
     """Uses Gemini to score the job and draft a professional bid."""
@@ -41,39 +43,34 @@ def get_ai_analysis(title, snippet):
         return {"score": 50, "is_genuine": True, "bid": "I am interested in this SIEM/SOAR role."}
 
 def fetch_cyber_leads():
-    """Finds a wider range of SOC/SIEM jobs across multiple platforms."""
+    """Broadened search to increase find rate."""
     queries = [
-        'site:upwork.com ("SIEM" OR "SOAR" OR "SOC" OR "Log Management") "Remote"',
-        'site:upwork.com ("Splunk" OR "Sentinel" OR "Wazuh" OR "ELK") "Freelance"',
-        'site:freelancer.com ("Cybersecurity" OR "Information Security") "Remote"',
-        'site:guru.com ("Security Analyst" OR "Firewall" OR "Compliance")',
+        'site:upwork.com ("SIEM" OR "SOAR" OR "SOC" OR "Sentinel" OR "Splunk" OR "QRadar" OR "qradar" OR "Incident Response" OR "XSOAR") "Remote"',
+        'site:freelancer.com ("Cybersecurity" OR "Security Operations") "Remote"',
         'site:linkedin.com/jobs "SIEM" "Contract"',
-        'site:simplyhired.com "Security Operations Center" "Remote"'
+        'site:simplyhired.com "SOC Analyst" "Remote"'
     ]
     
     found_jobs = []
-    MAX_TOTAL_RESULTS = 15 # Requirement: Keep list populated
+    MAX_RESULTS = 15
     
     with DDGS() as ddgs:
         for query in queries:
-            if len(found_jobs) >= MAX_TOTAL_RESULTS:
-                break
             try:
-                # timelimit='w' (week) ensures results even on quiet days
-                results = ddgs.text(query, timelimit='w', max_results=10)
+                # Changed timelimit to None to find any recent postings if 'w' is too restrictive
+                results = ddgs.text(query, max_results=8)
                 for r in results:
-                    if any(x in r['href'].lower() for x in ["/jobs/", "/projects/", "/view/"]):
+                    if any(x in r['href'].lower() for x in ["/jobs/", "/projects/", "/view/", "/l/"]):
                         found_jobs.append({
                             "title": r['title'].split(" - ")[0],
                             "source": r['href'],
                             "snippet": r['body']
                         })
-                time.sleep(5) 
+                time.sleep(2) 
             except Exception as e:
-                print(f"Search Error on {query}: {e}")
-                time.sleep(10) 
+                print(f"Search error: {e}")
                 
-    return found_jobs[:MAX_TOTAL_RESULTS]
+    return found_jobs[:MAX_RESULTS]
 
 def process_and_save(raw_leads):
     os.makedirs('data', exist_ok=True)
