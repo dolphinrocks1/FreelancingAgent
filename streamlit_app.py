@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import os
 import subprocess
+import sys
 
 # --- Configuration ---
 CSV_FILE = "data/jobs.csv"
@@ -37,7 +38,8 @@ target_niche = st.sidebar.selectbox(
 
 if st.sidebar.button("🚀 Force Manual Scan"):
     with st.sidebar.status(f"Scanning for {target_niche}..."):
-        result = subprocess.run(["python", "searcher.py", target_niche], capture_output=True, text=True)
+        # Use sys.executable to ensure we use the same environment as Streamlit
+        result = subprocess.run([sys.executable, "searcher.py", target_niche], capture_output=True, text=True)
         if result.returncode == 0:
             st.rerun()
         else:
