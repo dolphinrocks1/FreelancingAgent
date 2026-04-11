@@ -68,8 +68,7 @@ def main():
     
     query = queries.get(service, "Python")
     
-    # 2. Define multiple RSS Feed sources
-    # Note: RemoteOK and Freelancer often use different path structures
+    # We loop through platforms to ensure broad coverage
     sources = [
         f"https://www.upwork.com/ab/feed/jobs/rss?q={query}",
         f"https://remoteok.com/remote-{query.replace('+', '-')}-jobs.rss",
