@@ -22,12 +22,33 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
           
-          # Fix for Ubuntu 24.04 (Noble) library changes
+          # 1. Manually install every library Playwright needs for Chromium on Ubuntu 24.04
           sudo apt-get update
-          sudo apt-get install -y libasound2t64  # This replaces the missing libasound2
-          
-          # Install Playwright and force system dependencies
-          playwright install chromium --with-deps
+          sudo apt-get install -y \
+            libasound2t64 \
+            libgbm1 \
+            libnss3 \
+            libatk-bridge2.0-0 \
+            libgtk-3-0 \
+            libx11-xcb1 \
+            libxcb-dri3-0 \
+            libxcomposite1 \
+            libxcursor1 \
+            libxdamage1 \
+            libxfixes3 \
+            libxi6 \
+            libxrandr2 \
+            libxtst6 \
+            libpangocairo-1.0-0 \
+            libpango-1.0-0 \
+            libatk1.0-0 \
+            libcairo-gobject2 \
+            libcairo2 \
+            libgdk-pixbuf-2.0-0 \
+            libglib2.0-0
+            
+          # 2. Install ONLY the browser binaries (skip the failing --with-deps check)
+          playwright install chromium
       
       - name: Run Searcher Agent
         run: python searcher.py
