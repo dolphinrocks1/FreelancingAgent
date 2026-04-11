@@ -23,11 +23,13 @@ def fetch_live_leads():
     """Directly hits live RSS feeds for instant updates."""
     # FEEDS: You can add more RSS URLs here as you find them
     feeds = [
-        # Upwork: "Cyber Security" & "SIEM" feed (Example URL - see note below)
-        "https://www.upwork.com/ab/feed/jobs/rss?q=cyber%20security,%20siem,%20qradar,%20splunk,%20soar",
-        # We Work Remotely: Dev & Security roles
-        "https://weworkremotely.com/categories/remote-dev-jobs.rss",
-        # Remote OK: Security roles
+        # BROAD UPWORK SEARCH: Matches any of these high-value terms
+        "https://www.upwork.com/ab/feed/jobs/rss?q=%28SIEM+OR+SOAR+OR+%22Cyber+Security%22+OR+%22Python+Developer%22%29",
+        
+        # WE WORK REMOTELY: Main security feed
+        "https://weworkremotely.com/categories/remote-security-jobs.rss",
+        
+        # REMOTE OK: All security postings
         "https://remoteok.com/remote-security-jobs.rss"
     ]
     
@@ -54,7 +56,7 @@ def get_ai_analysis(title, snippet):
     Details: {snippet}
     
     Role: SIEM/SOAR/Detection Engineer or Senior Software Developer.
-    Return ONLY JSON: {{"score": 95, "is_genuine": true, "bid": "Expert pitch..."}}
+    Return ONLY JSON: {{"score": 65, "is_genuine": true, "bid": "Expert pitch..."}}
     """
     try:
         response = model.generate_content(prompt)
