@@ -4,7 +4,7 @@ import json
 import pandas as pd
 import google.generativeai as genai
 import feedparser 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta # Fixed import
 
 # --- CONFIGURATION ---
 CSV_FILE = 'data/jobs.csv'
@@ -14,18 +14,16 @@ model = genai.GenerativeModel('gemini-1.5-flash')
 
 def update_timestamp():
     os.makedirs('data', exist_ok=True)
+    # Convert to IST
     ist_time = datetime.now() + timedelta(hours=5, minutes=30)
     now_str = ist_time.strftime("%A, %b %d - %I:%M %p")
     with open(LAST_RUN_FILE, 'w') as f:
         f.write(now_str)
 
 def fetch_live_leads():
-    """Directly hits live RSS feeds for instant updates."""
+    """Hits live RSS feeds for instant SIEM/SOAR updates."""
     feeds = [
-        # Upwork Niche Feed with specific tool keywords
         "https://www.upwork.com/ab/feed/jobs/rss?q=(SIEM+OR+SOAR+OR+QRadar+OR+Sentinel+OR+Splunk+OR+Wazuh+OR+XSOAR+OR+XSIAM+OR+%22Playbook+Developer%22)&sort=recency",
-        
-        # Security Specific Remote Feeds
         "https://weworkremotely.com/categories/remote-security-jobs.rss",
         "https://remoteok.com/remote-security-jobs.rss"
     ]
@@ -39,7 +37,7 @@ def fetch_live_leads():
                 found_jobs.append({
                     "title": entry.title,
                     "source": entry.link,
-                    "snippet": entry.description[:700] # Increased slightly for better AI context
+                    "snippet": entry.description[:700] 
                 })
         except Exception as e:
             print(f"Feed error: {e}")
@@ -55,10 +53,10 @@ def get_ai_analysis(title, snippet):
     
     1. Give a Relevance Score (0-100) based on these keywords: QRadar, Sentinel, Splunk, Wazuh, XSOAR, XSIAM, Playbook Automation.
     2. Write a Professional Bid Proposal using this structure:
-       - HOOK: Acknowledge the specific technical pain point (e.g. migration, integration, playbook creation).
+       - HOOK: Acknowledge the specific technical pain point.
        - EXPERTISE: Mention specific experience in building automated playbooks and SOC integration.
-       - SOLUTION: Suggest a high-level technical approach (e.g. custom decoders, workbook optimization).
-       - CALL TO ACTION: Ask a technical discovery question to start the conversation.
+       - SOLUTION: Suggest a high-level technical approach.
+       - CALL TO ACTION: Ask a technical discovery question.
     
     Output STRICTLY in JSON format: {{"score": 85, "bid": "Expert pitch text..."}}
     """
@@ -67,15 +65,16 @@ def get_ai_analysis(title, snippet):
         cleaned = response.text.strip().replace('```json', '').replace('```', '')
         return json.loads(cleaned)
     except:
-        # Fallback with neutral score
-        return {"score": 50, "bid": "I noticed you're looking for a SIEM/SOAR expert. I specialize in automation and detection engineering and would love to help optimize your environment."}
+        return {"score": 50, "bid": "I specialize in SIEM/SOAR automation and would love to help optimize your environment."}
 
 def process_and_save(raw_leads):
     os.makedirs('data', exist_ok=True)
+    
     if not raw_leads:
-        print("No live listings found in this cycle.")
+        print("No live listings found.")
         return
 
+    # Logic: Read existing or initialize empty list if file doesn't exist
     existing_sources = []
     if os.path.exists(CSV_FILE):
         try:
@@ -85,13 +84,12 @@ def process_and_save(raw_leads):
 
     final_data = []
     for lead in raw_leads:
-        # Avoid duplicate analysis
         if lead['source'] in existing_sources:
             continue
             
         analysis = get_ai_analysis(lead['title'], lead['snippet'])
         
-        # CRITICAL: Filter for high-quality niche leads (score >= 70)
+        # Filtering for high match quality
         if analysis.get('score', 0) >= 70: 
             final_data.append({
                 "title": lead['title'],
@@ -105,13 +103,16 @@ def process_and_save(raw_leads):
     if final_data:
         new_df = pd.DataFrame(final_data)
         if os.path.exists(CSV_FILE):
+            # Append to existing
             existing_df = pd.read_csv(CSV_FILE)
             combined = pd.concat([existing_df, new_df], ignore_index=True)
-            # Keep only the latest 100 leads to maintain performance
             combined.tail(100).to_csv(CSV_FILE, index=False)
         else:
+            # Re-create file if it was deleted
             new_df.to_csv(CSV_FILE, index=False)
-        print(f"🚀 Found and saved {len(final_data)} niche-specific live leads!")
+        print(f"🚀 Success: {len(final_data)} new niche leads saved to {CSV_FILE}.")
+    else:
+        print("Done. No new high-scoring leads to add this cycle.")
 
 if __name__ == "__main__":
     try:
