@@ -3,5 +3,6 @@ streamlit
 google-generativeai
 duckduckgo_search
 feedparser
-beautifulsoup4
 requests
+playwright==1.42.0
+beautifulsoup4==4.12.3
