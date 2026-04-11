@@ -1,67 +1,96 @@
-import streamlit as st
-import pandas as pd
-import os
+import os, sys, pandas as pd, feedparser, json, google.generativeai as genai
+from datetime import datetime
+import pytz
 
-st.set_page_config(page_title="Agency Lead Manager", layout="wide")
+# Configuration
+IST = pytz.timezone('Asia/Kolkata')
 CSV_FILE = "data/jobs.csv"
+os.makedirs("data", exist_ok=True)
 
-# --- SIDEBAR & ANALYTICS ---
-with st.sidebar:
-    st.title("🛡️ Scout HQ")
-    service = st.selectbox("Target Niche", ["Cyber Security", "AI Agent Builder", "App Developer", "Software Developer"])
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+model = genai.GenerativeModel('gemini-1.5-flash')
+
+def get_ai_analysis(title, desc, service_type):
+    """Generates professional analysis and a high-conversion pitch"""
+    prompt = f"""
+    Act as a Senior Technical Lead for an Agency. 
+    Category: {service_type}
+    Job: {title}
+    Description: {desc}
+
+    Task:
+    1. Score relevance (0-100). Focus on technical IC work. Penalize HR/Management/Leadership roles.
+    2. Write a 3-sentence high-conversion 'hook'. Mention specific stack components like 
+       Wazuh, Sentinel, Splunk, Python, or LLMs where relevant to {service_type}.
     
-    if st.button("🔎 Scan for New Leads"):
-        st.info(f"Triggering GitHub Action for {service}...")
-        # Note: You need to pass the 'service' variable to your GH Action trigger
+    Return ONLY JSON:
+    {{"score": 85, "analysis": "Brief technical fit explanation", "pitch": "The pitch starting with 'Hi, I can help with...' "}}
+    """
+    try:
+        response = model.generate_content(prompt)
+        # Clean JSON markdown if present
+        clean_text = response.text.strip().replace('```json', '').replace('```', '')
+        return json.loads(clean_text)
+    except Exception as e:
+        print(f"AI Error: {e}")
+        return {"score": 50, "analysis": "Automated match based on category keywords.", "pitch": "I am a senior developer/engineer ready to assist with your project."}
 
-    st.markdown("---")
-    st.subheader("📊 Performance")
+def main():
+    # 1. Handle Inputs (Service Type)
+    service = sys.argv[1] if len(sys.argv) > 1 else "Cyber Security"
+    print(f"🚀 Scout Agent: Starting scan for {service}...")
+    
+    # 2. Define Niche Queries
+    queries = {
+        "Cyber Security": "SIEM+SOAR+Wazuh+Sentinel+Splunk",
+        "AI Agent Builder": "LLM+LangChain+AutoGPT+OpenAI+Automation",
+        "App Developer": "Flutter+React+Native+iOS+Android",
+        "Software Developer": "Python+Backend+FastAPI+Microservices"
+    }
+    
+    query = queries.get(service, "Python+Developer")
+    url = f"https://www.upwork.com/ab/feed/jobs/rss?q={query}"
+    
+    # 3. Poll and Analyze
+    feed = feedparser.parse(url)
+    new_found_leads = []
+    
+    for entry in feed.entries[:15]:
+        analysis = get_ai_analysis(entry.title, entry.description, service)
+        if analysis['score'] >= 40: # Quality Threshold
+            new_found_leads.append({
+                "id": entry.link, 
+                "title": entry.title,
+                "source": entry.link,
+                "score": analysis['score'],
+                "service": service,
+                "status": "New", 
+                "pitch": analysis['pitch'],
+                "analysis": analysis['analysis'],
+                "found_at": datetime.now(IST).strftime("%Y-%m-%d %H:%M")
+            })
+
+    # 4. State Management (The "Pro" Logic)
     if os.path.exists(CSV_FILE):
-        df = pd.read_csv(CSV_FILE)
-        st.metric("Total in Database", len(df))
-        st.metric("Applied Leads", len(df[df['status'] == 'Applied']))
-
-# --- MAIN DASHBOARD ---
-st.title("Lead Management Dashboard")
-
-if os.path.exists(CSV_FILE):
-    df = pd.read_csv(CSV_FILE)
-    tab1, tab2 = st.tabs(["🆕 New Found Details", "✅ Applied Leads"])
-
-    with tab1:
-        # Filter for the selected service and 'New' status
-        new_df = df[(df['status'] == 'New') & (df['service'] == service)]
+        existing_df = pd.read_csv(CSV_FILE)
         
-        if not new_df.empty:
-            # Tabular Display
-            st.dataframe(new_df[['title', 'score', 'found_at']], use_container_width=True)
-            
-            for i, row in new_df.iterrows():
-                with st.expander(f"Action: {row['title']} (Score: {row['score']})"):
-                    st.write(f"**AI Analysis:** {row['analysis']}")
-                    st.text_area("Customized Pitch", row['pitch'], height=100, key=f"p_{i}")
-                    
-                    c1, c2 = st.columns(2)
-                    if c1.button("Mark as Applied", key=f"app_{i}"):
-                        df.at[i, 'status'] = 'Applied'
-                        df.to_csv(CSV_FILE, index=False)
-                        st.rerun()
-                    c2.link_button("Open Job Link", row['source'])
-        else:
-            st.write("No new leads found for this niche yet.")
+        # A. Protect the "Applied" Leads: Keep them regardless of current scan
+        applied_leads = existing_df[existing_df['status'] == 'Applied']
+        
+        # B. Clean "New" Leads: Remove old 'New' leads for THIS service only
+        # This prevents the 'New' tab from becoming an endless pile of old data.
+        other_leads = existing_df[(existing_df['status'] != 'New') | (existing_df['service'] != service)]
+        
+        # C. Combine: Current Applied + Other Services + Current Scan Results
+        final_df = pd.concat([other_leads, pd.DataFrame(new_found_leads)])
+        # Use Link (id) as the source of truth to prevent duplicates
+        final_df = final_df.drop_duplicates(subset='id', keep='last')
+    else:
+        final_df = pd.DataFrame(new_found_leads)
 
-    with tab2:
-        applied_df = df[df['status'] == 'Applied']
-        if not applied_df.empty:
-            for i, row in applied_df.iterrows():
-                col_t, col_b = st.columns([4, 1])
-                col_t.write(f"**{row['title']}** ({row['service']})")
-                if col_b.button("🗑️ Remove", key=f"del_{i}"):
-                    df = df.drop(i)
-                    df.to_csv(CSV_FILE, index=False)
-                    st.rerun()
-            st.table(applied_df[['title', 'service', 'found_at']])
-        else:
-            st.info("No leads moved to 'Applied' status yet.")
-else:
-    st.warning("No data found. Please run a scan.")
+    # 5. Final Save
+    final_df.to_csv(CSV_FILE, index=False)
+    print(f"✅ Scan Complete. {len(new_found_leads)} fresh leads available in Tab 1.")
+
+if __name__ == "__main__":
+    main()
