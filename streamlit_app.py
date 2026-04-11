@@ -2,91 +2,81 @@ import streamlit as st
 import pandas as pd
 import subprocess
 import os
+import sys
 from datetime import datetime
 
 CSV_FILE = "data/jobs.csv"
 
 def run_scan(niche):
-    """Runs searcher.py with a progress bar and error handling."""
+    """Generic progress tracker for any job source."""
     progress_bar = st.progress(0, text="Initializing Searcher Agent...")
     try:
-        # Use sys.executable to ensure we use the same environment as Streamlit
-        import sys
-        progress_bar.progress(30, text=f"🔍 Scanning Upwork for {niche}...")
-        
+        progress_bar.progress(25, text=f"📡 Connecting to data feeds for {niche}...")
+        # Ensuring we use the Streamlit python environment to avoid ModuleNotFound
         result = subprocess.run(
             [sys.executable, "searcher.py", niche], 
-            capture_output=True, 
-            text=True, 
-            check=True
+            capture_output=True, text=True, check=True
         )
-        
+        progress_bar.progress(75, text="🧠 AI is scoring and drafting pitches...")
         progress_bar.progress(100, text="✅ Scan Complete!")
-        st.success(f"Searcher output: {result.stdout.splitlines()[-1]}")
+        st.success("New leads aggregated successfully.")
     except subprocess.CalledProcessError as e:
-        st.error(f"Searcher crashed: {e.stderr}")
+        st.error(f"Searcher failed: {e.stderr}")
     finally:
-        # Give the user a moment to see the 100% before refreshing
         import time
         time.sleep(1)
         st.rerun()
 
-st.title("💼 Freelancing Job Hunter")
+st.set_page_config(page_title="Scout HQ", layout="wide")
+st.title("💼 Lead Discovery Dashboard")
 
-# --- Sidebar Settings ---
+# --- Sidebar ---
 with st.sidebar:
     st.header("Search Settings")
-    current_niche = st.selectbox("Target Niche", ["Cyber Security", "AI Agent Builder", "Software Developer"])
+    # Restored all niches including App Development
+    current_niche = st.selectbox("Target Niche", 
+        ["Cyber Security", "AI Agent Builder", "App Development", "Software Developer"])
+    
     if st.button("🚀 Force Manual Scan"):
         run_scan(current_niche)
     
     if st.button("🗑️ Clear Database"):
         if os.path.exists(CSV_FILE):
             os.remove(CSV_FILE)
-            st.success("Database cleared!")
             st.rerun()
 
-# --- Main Dashboard ---
-if os.path.exists(CSV_FILE):
+# --- Main Logic ---
+if os.path.exists(CSV_FILE) and os.path.getsize(CSV_FILE) > 60: # 60 bytes handles empty header-only files
     df = pd.read_csv(CSV_FILE)
     
-    # Ensure columns match what searcher.py produces
-    # We normalize names here to ensure the UI doesn't break
+    # Map headers to UI names
     col_map = {'weightage_score': 'score', 'is_genuine': 'status'}
     df = df.rename(columns=col_map)
 
-    # Metrics
-    total_leads = len(df)
-    high_match = len(df[df['score'] >= 70]) if 'score' in df.columns else 0
-    
+    # Metrics with empty-check safeguard
     col1, col2, col3 = st.columns(3)
-    col1.metric("Total Leads", total_leads)
-    col2.metric("High Match (70%+)", high_match)
+    col1.metric("Total Leads", len(df))
     
-    if 'last_scanned' in df.columns:
-        # Sort by date to keep newest results on top
-        df['last_scanned_dt'] = pd.to_datetime(df['last_scanned'], errors='coerce')
-        df = df.sort_values(by='last_scanned_dt', ascending=False)
+    high_match = len(df[df['score'] >= 70]) if 'score' in df.columns else 0
+    col2.metric("High Match", high_match)
+    
+    # FIX for IndexError: Only check iloc if df is NOT empty
+    if not df.empty and 'last_scanned' in df.columns:
+        df = df.sort_values(by='last_scanned', ascending=False)
         last_time = df['last_scanned'].iloc[0]
         col3.metric("Last Scan", str(last_time))
 
-    # Display Table
-    st.subheader(f"📡 New Leads for {current_niche}")
-    # Filter for current niche
-    filtered_df = df[df['service'] == current_niche] if 'service' in df.columns else df
+    # Table View - Filter by Niche
+    st.subheader(f"📡 New Leads: {current_niche}")
+    display_df = df[df['service'] == current_niche] if 'service' in df.columns else df
     
-    if not filtered_df.empty:
+    if not display_df.empty:
         st.dataframe(
-            filtered_df[['score', 'title', 'source', 'draft', 'last_scanned']],
-            column_config={
-                "score": st.column_config.ProgressColumn("Match", format="%d%%", min_value=0, max_value=100),
-                "source": st.column_config.LinkColumn("Listing"),
-                "draft": "Proposed Pitch"
-            },
-            hide_index=True,
-            use_container_width=True
+            display_df[['score', 'title', 'source', 'draft', 'last_scanned']],
+            column_config={"source": st.column_config.LinkColumn("Listing")},
+            hide_index=True, use_container_width=True
         )
     else:
-        st.info("No leads found for this niche yet. Click 'Force Manual Scan'.")
+        st.info(f"No results found for {current_niche} in the local database.")
 else:
-    st.warning("No data found. Run your first scan from the sidebar.")
+    st.warning("Database is empty. Please run a scan to find new leads.")
