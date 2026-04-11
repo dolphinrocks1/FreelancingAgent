@@ -48,11 +48,11 @@ def fetch_cyber_leads():
     """Broadened to include App/Web/Software development per request."""
     queries = [
         # Original SIEM/SOAR
-        'site:upwork.com ("SIEM" OR "SOAR" OR "SOC") "Remote"',
+        'site:upwork.com ("SIEM" OR "SOAR" OR "SOC")',
         # App & Software Development (New)
-        'site:upwork.com ("Python" OR "Fullstack") "Application Development" "Remote"',
-        'site:freelancer.com ("Software Engineer" OR "Web Developer") "Remote"',
-        'site:guru.com ("Website Building" OR "React" OR "Node.js") "Remote"',
+        'site:upwork.com ("Python" OR "Fullstack" OR "SIEM" OR "SOAR" OR "Qradar" OR "Splunk" OR "Sentinel" OR "XSOAR") "Application Development" "Remote"',
+        'site:freelancer.com ("Software Engineer" OR "Web Developer" OR "Security Analyst" OR "Security Expert" OR "SIEM Expert" OR "Automation Engineer" OR "SIEM" OR "SOAR" OR "Qradar" OR "Splunk" OR "Sentinel" OR "XSOAR")',
+        'site:guru.com ("Website Building" OR "React" OR "Node.js" OR "SIEM" OR "SOAR" OR "Qradar" OR "Splunk" OR "Sentinel" OR "XSOAR")',
         'site:simplyhired.com "Software Developer" "Contract" "Remote"'
     ]
     
