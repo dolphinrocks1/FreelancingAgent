@@ -24,7 +24,7 @@ def fetch_live_leads():
     # FEEDS: You can add more RSS URLs here as you find them
     feeds = [
         # BROAD UPWORK SEARCH: Matches any of these high-value terms
-        "https://www.upwork.com/ab/feed/jobs/rss?q=%28SIEM+OR+SOAR+OR+%22Cyber+Security%22+OR+%22Python+Developer%22%29",
+        "https://www.upwork.com/ab/feed/jobs/rss?q=%28SIEM+OR+SOAR+OR+%22Cyber+Security%22+OR+SOC+OR+%22Detection+Engineer%22%29&sort=recency",
         
         # WE WORK REMOTELY: Main security feed
         "https://weworkremotely.com/categories/remote-security-jobs.rss",
