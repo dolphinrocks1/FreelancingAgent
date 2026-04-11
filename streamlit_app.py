@@ -9,8 +9,18 @@ CSV_FILE = "data/jobs.csv"
 
 def run_scan(niche):
     with st.spinner(f"Freelancing Job Hunter is scouting {niche}..."):
-        subprocess.run(["python", "searcher.py", niche], check=True)
-        st.toast(f"Fresh leads found for {niche}!", icon="🎯")
+        try:
+            # Capture output so we can see the actual error in the UI
+            result = subprocess.run(
+                ["python", "searcher.py", niche], 
+                capture_output=True, 
+                text=True, 
+                check=True
+            )
+            st.toast(f"Fresh leads found for {niche}!", icon="🎯")
+        except subprocess.CalledProcessError as e:
+            st.error(f"Scan Failed! Error details:")
+            st.code(e.stderr) # This will show the actual Python traceback from searcher.py
 
 def load_data():
     if not os.path.exists(CSV_FILE): return pd.DataFrame()
