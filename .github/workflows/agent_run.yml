@@ -17,10 +17,11 @@ jobs:
         with:
           python-version: '3.10'
 
-      - name: Install dependencies
+      - name: Install Dependencies
         run: |
           pip install -r requirements.txt
-
+          playwright install chromium --with-deps
+      
       - name: Run Searcher Agent
         run: python searcher.py
         env:
