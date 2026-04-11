@@ -1,5 +1,4 @@
 import os
-import time
 import pandas as pd
 import feedparser
 import google.generativeai as genai
@@ -19,35 +18,37 @@ def get_ist_time():
     return datetime.now(IST).strftime("%A, %b %d - %I:%M %p")
 
 def get_ai_score(title, description):
-    """Rigid technical IC filter"""
-    keywords = ['siem', 'soar', 'wazuh', 'sentinel', 'splunk', 'soc', 'detection']
+    """Rigid technical filter with a keyword safety net"""
+    keywords = ['siem', 'soar', 'wazuh', 'sentinel', 'splunk', 'soc', 'detection', 'automation']
     title_lower = title.lower()
-    # Force pass if core keyword exists in title
+    
+    # HEURISTIC: If core keywords are in the title, it's a 65+ match automatically
     base_score = 65 if any(k in title_lower for k in keywords) else 0
 
-    prompt = f"Role: {title}. Desc: {description}. Score 0-100 for a SIEM/SOAR Detection Engineer. Return ONLY JSON: {{\"score\": 85, \"reason\": \"...\", \"bid\": \"...\"}}"
+    prompt = f"Analyze: {title}. Desc: {description}. Score 0-100 for SIEM/SOAR IC. Return ONLY JSON: {{\"score\": 85, \"reason\": \"...\", \"bid\": \"...\"}}"
     try:
         response = model.generate_content(prompt)
         res = json.loads(response.text.strip().replace('```json', '').replace('```', ''))
         return {"score": max(res.get('score', 0), base_score), "bid": res.get('bid', 'N/A')}
     except:
-        return {"score": base_score, "bid": "N/A"}
+        return {"score": base_score, "bid": "Keyword fallback"}
 
 def main():
-    print(f"🚀 Starting Searcher Agent at {get_ist_time()}...")
+    print(f"🚀 Starting Final Stability Run at {get_ist_time()}...")
     raw_leads = []
 
-    # 1. RSS FEEDS (Much more stable than scraping/search)
-    feeds = [
-        "https://www.upwork.com/ab/feed/jobs/rss?q=SIEM+OR+SOAR+OR+Splunk+OR+Cybersecurity",
-        "https://remoteok.com/remote-security-jobs.rss"
+    # 1. DIRECT RSS POLLING (No Scraping/Search needed)
+    rss_sources = [
+        "https://www.upwork.com/ab/feed/jobs/rss?q=SIEM+OR+SOAR+OR+Splunk+OR+Wazuh",
+        "https://remoteok.com/remote-security-jobs.rss",
+        "https://www.freelancer.com/rss.xml" # Basic Freelancer RSS
     ]
     
-    for url in feeds:
+    for url in rss_sources:
         try:
-            print(f"📡 Polling: {url}")
+            print(f"📡 Polling Feed: {url}")
             feed = feedparser.parse(url)
-            for entry in feed.entries:
+            for entry in feed.entries[:20]:
                 raw_leads.append({
                     "title": entry.title,
                     "link": entry.link,
@@ -62,7 +63,7 @@ def main():
     
     for lead in raw_leads:
         analysis = get_ai_score(lead['title'], lead['desc'])
-        if analysis['score'] >= 40: # Slightly higher threshold for RSS
+        if analysis['score'] >= 45: # Professional Relevance Threshold
             processed_leads.append({
                 "title": lead['title'],
                 "source": lead['link'],
@@ -72,25 +73,26 @@ def main():
                 "found_at": get_ist_time()
             })
 
-    # 3. HEARTBEAT & SAVE
+    # 3. ALWAYS SAVE A HEARTBEAT
     if not processed_leads:
         processed_leads.append({
             "title": "System Check: RSS Active",
             "source": "https://github.com",
             "weightage_score": 1,
             "is_genuine": "System",
-            "draft": f"Scanned {len(raw_leads)} leads. All below threshold.",
+            "draft": f"Scan complete. Found {len(raw_leads)} raw entries, 0 matched SIEM/SOAR criteria.",
             "found_at": get_ist_time()
         })
 
+    # 4. DEDUPLICATE AND SAVE
     new_df = pd.DataFrame(processed_leads)
     if os.path.exists(CSV_FILE):
-        final_df = pd.concat([pd.read_csv(CSV_FILE), new_df], ignore_index=True).drop_duplicates(subset='source', keep='last')
+        df = pd.concat([pd.read_csv(CSV_FILE), new_df], ignore_index=True).drop_duplicates(subset='source', keep='last')
     else:
-        final_df = new_df
+        df = new_df
     
-    final_df.to_csv(CSV_FILE, index=False)
-    print(f"✅ Finished. {len(processed_leads)} entries saved.")
+    df.to_csv(CSV_FILE, index=False)
+    print(f"✅ Save Complete. {len(processed_leads)} entries recorded.")
 
 if __name__ == "__main__":
     main()
