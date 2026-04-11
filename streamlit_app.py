@@ -2,55 +2,66 @@ import streamlit as st
 import pandas as pd
 import os
 
-# Page Config
-st.set_page_config(page_title="SIEM/SOAR Scout", page_icon="🛡️", layout="wide")
-
+st.set_page_config(page_title="Agency Lead Manager", layout="wide")
 CSV_FILE = "data/jobs.csv"
 
-# Sidebar for Manual Sync
+# --- SIDEBAR & ANALYTICS ---
 with st.sidebar:
-    st.title("🔄 Manual Sync")
-    st.info("The agent runs automatically every 3 hours.")
-    if st.button("🚀 Trigger New Scan"):
-        st.warning("Ensure GH_TOKEN is set in Streamlit Secrets to use this.")
+    st.title("🛡️ Scout HQ")
+    service = st.selectbox("Target Niche", ["Cyber Security", "AI Agent Builder", "App Developer", "Software Developer"])
+    
+    if st.button("🔎 Scan for New Leads"):
+        st.info(f"Triggering GitHub Action for {service}...")
+        # Note: You need to pass the 'service' variable to your GH Action trigger
 
-st.title("🛡️ SIEM/SOAR Scout")
-st.markdown("---")
-
-# Data Loading with Error Handling
-if os.path.exists(CSV_FILE):
-    try:
+    st.markdown("---")
+    st.subheader("📊 Performance")
+    if os.path.exists(CSV_FILE):
         df = pd.read_csv(CSV_FILE)
+        st.metric("Total in Database", len(df))
+        st.metric("Applied Leads", len(df[df['status'] == 'Applied']))
+
+# --- MAIN DASHBOARD ---
+st.title("Lead Management Dashboard")
+
+if os.path.exists(CSV_FILE):
+    df = pd.read_csv(CSV_FILE)
+    tab1, tab2 = st.tabs(["🆕 New Found Details", "✅ Applied Leads"])
+
+    with tab1:
+        # Filter for the selected service and 'New' status
+        new_df = df[(df['status'] == 'New') & (df['service'] == service)]
         
-        # Clean up data: ensure weightage is numeric and drop empty rows
-        df['weightage_score'] = pd.to_numeric(df['weightage_score'], errors='coerce').fillna(0)
-        df = df.sort_values(by='weightage_score', ascending=False)
+        if not new_df.empty:
+            # Tabular Display
+            st.dataframe(new_df[['title', 'score', 'found_at']], use_container_width=True)
+            
+            for i, row in new_df.iterrows():
+                with st.expander(f"Action: {row['title']} (Score: {row['score']})"):
+                    st.write(f"**AI Analysis:** {row['analysis']}")
+                    st.text_area("Customized Pitch", row['pitch'], height=100, key=f"p_{i}")
+                    
+                    c1, c2 = st.columns(2)
+                    if c1.button("Mark as Applied", key=f"app_{i}"):
+                        df.at[i, 'status'] = 'Applied'
+                        df.to_csv(CSV_FILE, index=False)
+                        st.rerun()
+                    c2.link_button("Open Job Link", row['source'])
+        else:
+            st.write("No new leads found for this niche yet.")
 
-        # Dashboard Metrics
-        col1, col2, col3 = st.columns(3)
-        col1.metric("Total Leads", len(df))
-        col2.metric("High Match (60+)", len(df[df['weightage_score'] >= 60]))
-        col3.write(f"🕒 **Last Update:** {df['found_at'].iloc[-1] if 'found_at' in df.columns else 'Unknown'}")
-
-        # Display Loop
-        for index, row in df.iterrows():
-            # Skip the system heartbeat entries from the main view
-            if row['is_genuine'] == "System":
-                continue
-                
-            with st.container():
-                st.subheader(f"📍 {row['title']}")
-                c1, c2 = st.columns([1, 4])
-                c1.progress(int(row['weightage_score']) / 100)
-                c2.write(f"**Score:** {row['weightage_score']}% | **Source:** [View Posting]({row['source']})")
-                
-                with st.expander("🔍 View AI Analysis & Proposed Pitch"):
-                    st.info(row['draft'])
-                    st.button("📋 Copy Bid to Clipboard", key=f"btn_{index}")
-                st.markdown("---")
-
-    except Exception as e:
-        st.error(f"Error loading UI: {e}")
-        st.write("Raw Data Preview:", df if 'df' in locals() else "CSV could not be read.")
+    with tab2:
+        applied_df = df[df['status'] == 'Applied']
+        if not applied_df.empty:
+            for i, row in applied_df.iterrows():
+                col_t, col_b = st.columns([4, 1])
+                col_t.write(f"**{row['title']}** ({row['service']})")
+                if col_b.button("🗑️ Remove", key=f"del_{i}"):
+                    df = df.drop(i)
+                    df.to_csv(CSV_FILE, index=False)
+                    st.rerun()
+            st.table(applied_df[['title', 'service', 'found_at']])
+        else:
+            st.info("No leads moved to 'Applied' status yet.")
 else:
-    st.warning("Waiting for the first scan to complete. Check GitHub Actions for status.")
+    st.warning("No data found. Please run a scan.")
