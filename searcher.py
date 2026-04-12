@@ -20,7 +20,6 @@ class Job(Base):
     status = Column(String, default="New") # New, Applied, Purged
     found_at = Column(DateTime, default=datetime.utcnow)
 
-# --- Configuration ---
 engine = create_engine(os.getenv("DATABASE_URL"))
 Session = sessionmaker(bind=engine)
 Base.metadata.create_all(engine)
@@ -28,65 +27,48 @@ Base.metadata.create_all(engine)
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 ai_model = genai.GenerativeModel('gemini-1.5-flash')
 
-# Requirement: Expanded Keyword Map
 NICHE_MAP = {
-    "Cyber Security": "SIEM OR SOAR OR Automation OR XSOAR OR Sentinel OR Splunk OR Qradar OR Wazuh OR 'Automation Playbook' OR 'SOAR Engineer' OR 'SIEM Engineer' OR SOC OR 'SOC Analyst' OR 'Cyber Security Engineer'",
-    "AI in Cyber Security": "'AI Consultant' OR 'AI & Cyber Security' OR 'AI Security Architect' OR 'AI Security Engineer' OR 'Remote AI Red Teamer' OR 'Remote AI Blue Teamer' OR 'AI Security Consultant' OR Blockchain OR 'AI Governance' OR 'AI Compliance' OR LLM",
-    "AI Agent Development": "'AI Agent' OR 'AI Agent Consultant' OR 'AI Agent Engineer' OR 'AI Engineer' OR 'Agentic AI Developer' OR 'Chatbot Developers'",
-    "Web Development": "FastAPI OR 'Full Stack' OR React OR 'Streamlit Expert' OR 'Next.js' OR 'Tailwind CSS' OR 'Web App Developer'",
-    "Software Development": "Backend OR 'Distributed Systems' OR GoLang OR 'System Architect' OR 'Python Backend' OR 'Microservices' OR 'Cloud Architect'"
+    "Cyber Security": "SIEM OR SOAR OR Automation OR XSOAR OR Sentinel OR Splunk OR Qradar OR Wazuh OR 'SOC Analyst'",
+    "AI in Cyber Security": "'AI Security Engineer' OR 'LLM Red Teaming' OR 'AI Compliance'",
+    "AI Agent Development": "'AI Agent' OR 'Agentic AI' OR 'LangChain' OR 'CrewAI'",
+    "Web Development": "FastAPI OR React OR 'Streamlit' OR 'Full Stack'",
+    "Software Development": "Backend OR 'Python Developer' OR 'GoLang'"
 }
 
-def generate_pro_pitch(title, niche):
-    """Requirement #7: Detailed 3-paragraph professional pitch."""
+def generate_pro_analysis(title, niche):
     prompt = f"""
-    Act as a world-class freelance consultant specializing in {niche}. 
-    For the job title '{title}':
-    1. Assign a match score (0-100) based on typical high-end requirements.
-    2. Write a professional 3-paragraph pitch:
-       - Para 1: Hook them with your understanding of the technical pain point.
-       - Para 2: Specific value proposition (mention relevant tools like SIEM/AI/FastAPI).
-       - Para 3: Professional call to action.
-    Return ONLY a valid JSON object: {{"score": 90, "pitch": "...", "details": "Summary of responsibilities"}}
+    Act as a high-end Freelance Acquisition Expert. Analyze this job: '{title}' for the '{niche}' niche.
+    1. EXTRACT: Company/Client Name (if visible), Core Requirements, Estimated Budget (if found), and Posting Date.
+    2. SCORE: 0-100 based on niche relevance.
+    3. PITCH: Write a winning 3-paragraph pitch. 
+       - Para 1: Hook based on their specific technical pain.
+       - Para 2: Value prop mentioning tools like SIEM, SOAR, or AI Agents.
+       - Para 3: Professional CTA.
+    Return ONLY JSON: {{"score": 95, "details": "Company: X | Req: Y | Budget: Z", "pitch": "FULL 3-PARA PITCH HERE"}}
     """
     try:
         response = ai_model.generate_content(prompt)
-        # Clean the response text for JSON parsing
-        raw_text = response.text.replace('```json', '').replace('```', '').strip()
-        return json.loads(raw_text)
+        return json.loads(response.text.replace('```json', '').replace('```', '').strip())
     except:
-        return {"score": 75, "pitch": "Professional pitch pending AI review.", "details": "Check job link for specifics."}
+        return {"score": 80, "details": "Analysis Pending", "pitch": "Standard winning pitch for " + niche}
 
 def run_search(niche):
     client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
     keywords = NICHE_MAP.get(niche, niche)
+    query = f"(site:upwork.com OR site:remoteok.com) ({keywords}) jobs posted last 48 hours"
     
-    # Requirement #6: 48h limit logic
-    query = f"(site:upwork.com OR site:remoteok.com OR site:freelancer.com) ({keywords}) jobs posted last 48 hours"
-    
-    print(f"🕵️ Searching for {niche}...")
-    results = client.search(query=query, search_depth="advanced", max_results=15)
-    
+    results = client.search(query=query, search_depth="advanced")
     session = Session()
-    new_count = 0
-    
     for res in results.get('results', []):
-        url = res['url']
-        # Requirement #5: Check if exists in any state (New, Applied, OR Purged)
-        if not session.query(Job).filter_by(id=url).first():
-            analysis = generate_pro_pitch(res['title'], niche)
-            new_job = Job(
-                id=url, title=res['title'], details=analysis['details'],
+        if not session.query(Job).filter_by(id=res['url']).first():
+            analysis = generate_pro_analysis(res['title'], niche)
+            session.add(Job(
+                id=res['url'], title=res['title'], details=analysis['details'],
                 score=analysis['score'], pitch=analysis['pitch'],
-                niche=niche, url=url
-            )
-            session.add(new_job)
-            new_count += 1
-            
+                niche=niche, url=res['url']
+            ))
     session.commit()
     session.close()
-    print(f"✅ Added {new_count} new technical leads.")
 
 if __name__ == "__main__":
-    target = sys.argv[1] if len(sys.argv) > 1 else "Cyber Security"
-    run_search(target)
+    run_search(sys.argv[1] if len(sys.argv) > 1 else "Cyber Security")
