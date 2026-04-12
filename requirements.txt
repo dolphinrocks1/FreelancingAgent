@@ -1,6 +1,9 @@
-pandas
 streamlit
+pandas
+sqlalchemy
+psycopg2-binary
+tavily-python
 google-generativeai
-duckduckgo_search
+python-dotenv
 feedparser
 pytz
