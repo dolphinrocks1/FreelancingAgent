@@ -4,8 +4,9 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from tavily import TavilyClient
 import google.generativeai as genai
-from datetime import datetime, timedelta
+from datetime import datetime
 
+# 1. Database Schema
 Base = declarative_base()
 class Job(Base):
     __tablename__ = 'jobs'
@@ -19,7 +20,7 @@ class Job(Base):
     status = Column(String, default="New")
     found_at = Column(DateTime, default=datetime.utcnow)
 
-# Ensure engine doesn't crash if URL is missing during local testing
+# 2. Environment & Database Setup
 db_url = os.getenv("DATABASE_URL")
 if not db_url:
     print("❌ ERROR: DATABASE_URL not found in environment.")
@@ -29,53 +30,88 @@ engine = create_engine(db_url)
 Session = sessionmaker(bind=engine)
 Base.metadata.create_all(engine)
 
+# 3. AI Engine Configuration
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 ai_model = genai.GenerativeModel('gemini-1.5-flash')
 
-def generate_pro_analysis(title, niche):
-    # Requirement: Multi-paragraph winning pitch + strict niche validation
+# 4. Niche-to-Keyword Mapping
+NICHE_MAP = {
+    "Cyber Security": "(site:upwork.com OR site:remoteok.com) 'Cyber Security' (SIEM OR SOC OR Sentinel OR Splunk OR 'Incident Response')",
+    "AI in Cyber Security": "(site:upwork.com OR site:wellfound.com) 'AI' ('Cyber Security' OR 'Red Teaming' OR 'LLM Security')",
+    "AI Agent Development": "(site:upwork.com OR site:ycombinator.com/jobs) ('AI Agent' OR 'LangChain' OR 'CrewAI' OR 'Agentic')",
+    "Web Development": "(site:upwork.com OR site:remoteok.com) ('FastAPI' OR 'React' OR 'Streamlit' OR 'Next.js')",
+    "Software Development": "(site:upwork.com OR site:github.com) ('Python Backend' OR 'GoLang' OR 'Microservices' OR 'Rust')"
+}
+
+def generate_pro_analysis(title, content, niche):
+    """Passes both title and description to Gemini for extraction."""
     prompt = f"""
-    Act as a Technical Recruiter and Sales Expert for a {niche} consultant.
-    Analyze the job: "{title}"
+    Act as a Technical Sales Expert for a {niche} consultant. 
+    Analyze this job posting:
+    Title: {title}
+    Description/Snippet: {content}
     
-    1. VALIDATE: Is this job actually about {niche}? (e.g., SIEM, SOC, AI Agents). If it's unrelated (like Real Estate), set 'is_match' to false.
-    2. EXTRACT: Client Name, Core Technical Requirements, Budget/Price, and Post Date.
-    3. PITCH: Write a 3-paragraph winning pitch. 
-       - Para 1: Hook the client by identifying their technical problem.
-       - Para 2: Detail your specific solution using industry tools (Splunk, LangChain, etc).
+    1. VALIDATE: Does this job specifically require technical skills in {niche}? If it's unrelated (e.g., real estate, admin), set 'is_match' to false.
+    2. EXTRACT: Find the Client/Company, Core Requirements, Budget/Price, and Date.
+    3. PITCH: Write a winning 3-paragraph pitch. 
+       - Para 1: Hook the client by identifying the technical pain point.
+       - Para 2: Detail a solution using tools like Splunk, LangChain, or specific SOC frameworks.
        - Para 3: Professional call to action.
 
-    Return ONLY JSON: {{"is_match": true, "score": 92, "details": "Company: ... | Budget: ...", "pitch": "..."}}
+    Return ONLY JSON: 
+    {{
+      "is_match": true, 
+      "score": 90, 
+      "details": "Company: [Name] | Requirements: [List] | Budget: [Amount]", 
+      "pitch": "Full 3-paragraph pitch here"
+    }}
     """
     try:
         response = ai_model.generate_content(prompt)
-        data = json.loads(response.text.replace('```json', '').replace('```', '').strip())
-        return data
-    except:
+        clean_json = response.text.replace('```json', '').replace('```', '').strip()
+        return json.loads(clean_json)
+    except Exception as e:
+        print(f"⚠️ AI skipped {title[:30]}... Reason: {e}")
         return {"is_match": False}
 
 def run_search(niche):
     client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
-    # Requirement #6: 48 hour limit
-    query = f"site:upwork.com OR site:remoteok.com '{niche}' jobs posted last 48 hours"
     
-    results = client.search(query=query, search_depth="advanced")
+    # Use the NICHE_MAP to get professional keywords
+    search_query = NICHE_MAP.get(niche, niche)
+    final_query = f"{search_query} jobs posted this week"
+    
+    print(f"🕵️ Searching for {niche} using high-intent keywords...")
+    results = client.search(query=final_query, search_depth="advanced", max_results=20)
+    
     session = Session()
+    new_jobs_found = 0
     
     for res in results.get('results', []):
         url = res['url']
-        # Requirement #5: Duplicacy check (Check New, Applied, and Purged)
+        # Check if we already know this lead
         if not session.query(Job).filter_by(id=url).first():
-            analysis = generate_pro_analysis(res['title'], niche)
+            # Pass BOTH title and description content to Gemini
+            analysis = generate_pro_analysis(res['title'], res.get('content', ''), niche)
+            
             if analysis.get('is_match'):
-                session.add(Job(
-                    id=url, title=res['title'], details=analysis['details'],
-                    score=analysis['score'], pitch=analysis['pitch'],
-                    niche=niche, url=url
-                ))
+                job = Job(
+                    id=url,
+                    title=res['title'],
+                    details=analysis.get('details', 'Extraction failed'),
+                    score=analysis.get('score', 70),
+                    pitch=analysis.get('pitch', 'Standard pitch applied'),
+                    niche=niche,
+                    url=url
+                )
+                session.add(job)
+                new_jobs_found += 1
     
     session.commit()
     session.close()
+    print(f"✅ Found and validated {new_jobs_found} new {niche} leads.")
 
 if __name__ == "__main__":
-    run_search(sys.argv[1] if len(sys.argv) > 1 else "Cyber Security")
+    # Get niche from command line or default to Cyber Security
+    target_niche = sys.argv[1] if len(sys.argv) > 1 else "Cyber Security"
+    run_search(target_niche)
