@@ -7,30 +7,19 @@ on:
         required: true
         default: 'Cyber Security'
   schedule:
-    # Runs every 3 hours as per your original configuration
     - cron: '0 */3 * * *'
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Code
-        uses: actions/checkout@v3
-
-      - name: Set up Python
-        uses: actions/setup-python@v4
+      - uses: actions/checkout@v3
+      - uses: actions/setup-python@v4
         with:
           python-version: '3.11'
-
-      - name: Install Dependencies
-        # Ensure your requirements.txt includes sqlalchemy and psycopg2-binary
-        run: pip install -r requirements.txt
-
-      - name: Run Searcher Agent
+      - run: pip install pandas sqlalchemy psycopg2-binary tavily-python
+      - name: Run Search
         env:
-          # These MUST match the names in your GitHub Repository Secrets
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
-          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        # Logic: Use the manual input if provided, otherwise default to 'Cyber Security' for cron runs
         run: python searcher.py "${{ github.event.inputs.service_type || 'Cyber Security' }}"
