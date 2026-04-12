@@ -86,7 +86,7 @@ def run_search(selected_niche):
     keywords = NICHE_MAP.get(selected_niche, selected_niche)
     
     # We broaden the search slightly to ensure we catch results, then let AI filter the noise
-    search_query = f"(site:upwork.com OR site:remoteok.com OR site:freelancer.com) ({keywords}) jobs"
+    search_query = f"(site:upwork.com OR site:remoteok.com OR site:freelancer.com) ({keywords}) jobs posted last 7 days"
     
     print(f"🕵️ Agent actively hunting for: {selected_niche}")
     
