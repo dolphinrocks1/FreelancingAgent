@@ -7,19 +7,31 @@ on:
         required: true
         default: 'Cyber Security'
   schedule:
+    # Runs every 3 hours to keep leads fresh
     - cron: '0 */3 * * *'
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-python@v4
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - run: pip install pandas sqlalchemy psycopg2-binary tavily-python
-      - name: Run Search
+
+      - name: Install Dependencies
+        # Added google-generativeai for the AI Pitch engine
+        run: |
+          pip install pandas sqlalchemy psycopg2-binary tavily-python google-generativeai
+
+      - name: Run Searcher Agent
         env:
+          # These must be set in your GitHub Repo -> Settings -> Secrets
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
           TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+        # Logic: Uses the manual input if triggered manually, defaults to Cyber Security for scheduled runs
         run: python searcher.py "${{ github.event.inputs.service_type || 'Cyber Security' }}"
