@@ -13,13 +13,14 @@ Base = declarative_base()
 
 class Job(Base):
     __tablename__ = 'jobs'
+    # Primary key remains the URL to prevent duplicates automatically
     id = Column(String, primary_key=True) 
     title = Column(String)
     url = Column(String)
-    details = Column(Text) # Added to store AI extraction
+    details = Column(Text)  # Necessary for the new Streamlit UI
     score = Column(Integer)
     niche = Column(String)
-    pitch = Column(Text)
+    pitch = Column(Text)    # Necessary for the new Streamlit UI
     status = Column(String, default="New")
     found_at = Column(DateTime, default=datetime.utcnow)
 
@@ -35,7 +36,12 @@ NICHE_MAP = {
 # --- AI Analysis Engine ---
 def generate_pro_analysis(title, content, niche):
     """Uses Gemini to validate the niche and generate the 3-paragraph pitch."""
-    genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+    # Ensure key exists before configuring
+    api_key = os.getenv("GEMINI_API_KEY")
+    if not api_key:
+        return {"is_match": True, "score": 85, "details": "AI Key Missing", "pitch": "Please check your GEMINI_API_KEY."}
+
+    genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-1.5-flash')
     
     prompt = f"""
@@ -58,7 +64,6 @@ def generate_pro_analysis(title, content, niche):
     """
     try:
         response = model.generate_content(prompt)
-        # Clean potential markdown from AI response
         clean_json = response.text.replace('```json', '').replace('```', '').strip()
         return json.loads(clean_json)
     except Exception as e:
@@ -70,10 +75,9 @@ def run_search(selected_niche):
     # 1. Environment Check
     db_url = os.getenv("DATABASE_URL")
     tavily_key = os.getenv("TAVILY_API_KEY")
-    gemini_key = os.getenv("GEMINI_API_KEY")
     
-    if not all([db_url, tavily_key, gemini_key]):
-        print("❌ Error: Missing environment variables (DATABASE_URL, TAVILY_API_KEY, or GEMINI_API_KEY)")
+    if not db_url or not tavily_key:
+        print("❌ Error: Missing environment variables (DATABASE_URL or TAVILY_API_KEY)")
         sys.exit(1)
 
     # 2. Database Setup
@@ -85,13 +89,13 @@ def run_search(selected_niche):
     client = TavilyClient(api_key=tavily_key)
     keywords = NICHE_MAP.get(selected_niche, selected_niche)
     
-    # We broaden the search slightly to ensure we catch results, then let AI filter the noise
+    # UPDATED: Search query accommodates last 7 days
     search_query = f"(site:upwork.com OR site:remoteok.com OR site:freelancer.com) ({keywords}) jobs posted last 7 days"
     
     print(f"🕵️ Agent actively hunting for: {selected_niche}")
+    print(f"🔑 Using keywords: {keywords}")
     
     try:
-        # Increase max_results to 20 to give the AI more to work with
         results = client.search(query=search_query, search_depth="advanced", max_results=20)
         
         session = Session()
@@ -102,15 +106,16 @@ def run_search(selected_niche):
             
             # 4. Deduplication
             if not session.query(Job).filter_by(id=url).first():
-                # 5. AI Validation & Pitch Generation
+                # 5. AI Enrichment
                 analysis = generate_pro_analysis(res['title'], res.get('content', ''), selected_niche)
                 
-                if analysis.get('is_match'):
+                # Only add if the AI confirms it matches your technical niche
+                if analysis.get('is_match', True):
                     new_job = Job(
                         id=url,
                         title=res['title'],
                         url=url,
-                        details=analysis.get('details', 'No details extracted'),
+                        details=analysis.get('details', 'Details extraction failed'),
                         score=analysis.get('score', 85),
                         niche=selected_niche,
                         pitch=analysis.get('pitch', 'Pitch generation failed'),
@@ -121,7 +126,7 @@ def run_search(selected_niche):
         
         session.commit()
         session.close()
-        print(f"✅ Success: Found and AI-validated {new_leads} new leads for {selected_niche}.")
+        print(f"✅ Success: Found {new_leads} new leads for {selected_niche}.")
         
     except Exception as e:
         print(f"❌ Search failed: {e}")
