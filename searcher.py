@@ -23,48 +23,55 @@ class Job(Base):
     status = Column(String, default="New")
     found_at = Column(DateTime, default=datetime.utcnow)
 
-# --- BROADENED Keyword Map ---
-# Removed strict quotes and complex AND logic to find MORE raw results
+# --- Broad Keyword Map ---
 NICHE_MAP = {
-    "Cyber Security": "Cybersecurity SIEM SOC Splunk Sentinel Wazuh Pentest",
-    "AI in Cyber Security": "AI Cybersecurity ML Security LLM Red Team Threat Detection",
-    "AI Agent Development": "AI Agent LangChain CrewAI Agentic LLM Engineer",
-    "Web Development": "Python FastAPI React Streamlit Web Developer",
-    "Software Development": "Python Backend GoLang Rust System Architect"
+    "Cyber Security": "Cybersecurity SIEM SOC Splunk Sentinel Wazuh Pentest jobs",
+    "AI in Cyber Security": "AI Cybersecurity ML Security LLM Red Team Threat Detection jobs",
+    "AI Agent Development": "AI Agent LangChain CrewAI Agentic LLM Engineer jobs",
+    "Web Development": "Python FastAPI React Streamlit Web Developer jobs",
+    "Software Development": "Python Backend GoLang Rust System Architect jobs"
 }
 
-def generate_pro_analysis(title, content, niche):
+def generate_pro_analysis(title, full_content, niche):
+    """Demands specific data extraction and a structured 3-paragraph pitch."""
     api_key = os.getenv("GEMINI_API_KEY")
     if not api_key:
-        return {"is_match": True, "score": 85, "details": "AI Key Missing", "pitch": "Check GEMINI_API_KEY."}
+        return {"is_match": True, "score": 70, "details": "API Key Missing", "pitch": "Check configuration."}
 
     genai.configure(api_key=api_key)
     model = genai.GenerativeModel('gemini-1.5-flash')
     
-    prompt = f"""
-    Act as a Technical Sales Expert for a {niche} consultant. 
-    Analyze this job:
-    Title: {title}
-    Description: {content}
+    # We truncate content to avoid token limits while keeping the meat of the job post
+    context = full_content[:10000] if full_content else "No description available."
     
-    1. VALIDATE: Is this job related to {niche}? Set 'is_match' to true/false.
-    2. EXTRACT: Client/Company, Requirements, Budget.
-    3. PITCH: Write a 3-paragraph professional winning pitch.
+    prompt = f"""
+    Act as an Expert Technical Recruiter. Analyze this raw job data for a {niche} role:
+    Title: {title}
+    Full Content: {context}
+    
+    TASKS:
+    1. VALIDATE: If this is a generic 'hire me' profile or unrelated noise, set 'is_match' to false.
+    2. EXTRACT: Find the specific Company Name, the exact Budget/Salary (if mentioned), and the top 3 technical requirements.
+    3. PITCH: Write a high-conversion 3-paragraph pitch. 
+       - Para 1: Hook them by mentioning a specific requirement found in their description.
+       - Para 2: Explain how a {niche} expert solves their specific pain point.
+       - Para 3: Professional call to action.
 
     Return ONLY JSON: 
     {{
       "is_match": true, 
-      "score": 90, 
-      "details": "Company: [Name] | Requirements: [List] | Budget: [Amount]", 
-      "pitch": "..."
+      "score": 95, 
+      "details": "COMPANY: [Name] | BUDGET: [Price/Range] | REQS: [Req 1, Req 2, Req 3]", 
+      "pitch": "[Paragraph 1]\\n\\n[Paragraph 2]\\n\\n[Paragraph 3]"
     }}
     """
     try:
         response = model.generate_content(prompt)
         clean_json = response.text.replace('```json', '').replace('```', '').strip()
         return json.loads(clean_json)
-    except:
-        return {"is_match": True, "score": 70} # Default to true if AI fails so we don't lose leads
+    except Exception as e:
+        print(f"⚠️ AI Analysis Failed: {e}")
+        return {"is_match": True, "score": 70, "details": "Full analysis failed. Please check source.", "pitch": "Standard match for niche."}
 
 def run_search(selected_niche):
     db_url = os.getenv("DATABASE_URL")
@@ -81,19 +88,18 @@ def run_search(selected_niche):
     client = TavilyClient(api_key=tavily_key)
     keywords = NICHE_MAP.get(selected_niche, selected_niche)
     
-    # 7-DAY WINDOW + BROAD SEARCH
-    # We use 'past week' as a natural language hint for Tavily's crawler
-    search_query = f"{keywords} jobs hiring site:upwork.com OR site:remoteok.com"
+    # Aggressive search query
+    search_query = f"{keywords} (site:upwork.com OR site:remoteok.com OR site:wellfound.com)"
     
-    print(f"🕵️ Searching: {selected_niche} | Query: {search_query}")
+    print(f"🕵️ Deep-hunting: {selected_niche}")
     
     try:
-        # Using 'advanced' depth and searching for 'past_week'
+        # CRITICAL CHANGE: include_raw_content=True allows Gemini to see the full page
         results = client.search(
             query=search_query, 
             search_depth="advanced", 
-            max_results=30,
-            search_context=True # Tells Tavily to prioritize the context of the search
+            max_results=15,
+            include_raw_content=True
         )
         
         session = Session()
@@ -102,17 +108,20 @@ def run_search(selected_niche):
         for res in results.get('results', []):
             url = res['url']
             if not session.query(Job).filter_by(id=url).first():
-                analysis = generate_pro_analysis(res['title'], res.get('content', ''), selected_niche)
+                # Use 'raw_content' if available, otherwise fallback to 'content' snippet
+                job_body = res.get('raw_content') or res.get('content', '')
                 
-                if analysis.get('is_match', True):
+                analysis = generate_pro_analysis(res['title'], job_body, selected_niche)
+                
+                if analysis.get('is_match'):
                     new_job = Job(
                         id=url,
                         title=res['title'],
                         url=url,
-                        details=analysis.get('details', 'Check source for details'),
+                        details=analysis.get('details'),
                         score=analysis.get('score', 80),
                         niche=selected_niche,
-                        pitch=analysis.get('pitch', 'Pitch generated upon application.'),
+                        pitch=analysis.get('pitch'),
                         status="New"
                     )
                     session.add(new_job)
@@ -120,7 +129,7 @@ def run_search(selected_niche):
         
         session.commit()
         session.close()
-        print(f"✅ Success: Found {new_leads} new leads.")
+        print(f"✅ Deep Scan Complete: {new_leads} enriched leads found.")
         
     except Exception as e:
         print(f"❌ Search failed: {e}")
