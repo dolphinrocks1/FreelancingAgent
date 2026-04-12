@@ -4,10 +4,9 @@ from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import sessionmaker
 from tavily import TavilyClient
 import google.generativeai as genai
-from datetime import datetime
+from datetime import datetime, timedelta
 
 Base = declarative_base()
-
 class Job(Base):
     __tablename__ = 'jobs'
     id = Column(String, primary_key=True)
@@ -17,56 +16,64 @@ class Job(Base):
     pitch = Column(Text)
     niche = Column(String)
     url = Column(String)
-    status = Column(String, default="New") # New, Applied, Purged
+    status = Column(String, default="New")
     found_at = Column(DateTime, default=datetime.utcnow)
 
-engine = create_engine(os.getenv("DATABASE_URL"))
+# Ensure engine doesn't crash if URL is missing during local testing
+db_url = os.getenv("DATABASE_URL")
+if not db_url:
+    print("❌ ERROR: DATABASE_URL not found in environment.")
+    sys.exit(1)
+
+engine = create_engine(db_url)
 Session = sessionmaker(bind=engine)
 Base.metadata.create_all(engine)
 
 genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 ai_model = genai.GenerativeModel('gemini-1.5-flash')
 
-NICHE_MAP = {
-    "Cyber Security": "SIEM OR SOAR OR Automation OR XSOAR OR Sentinel OR Splunk OR Qradar OR Wazuh OR 'SOC Analyst'",
-    "AI in Cyber Security": "'AI Security Engineer' OR 'LLM Red Teaming' OR 'AI Compliance'",
-    "AI Agent Development": "'AI Agent' OR 'Agentic AI' OR 'LangChain' OR 'CrewAI'",
-    "Web Development": "FastAPI OR React OR 'Streamlit' OR 'Full Stack'",
-    "Software Development": "Backend OR 'Python Developer' OR 'GoLang'"
-}
-
 def generate_pro_analysis(title, niche):
+    # Requirement: Multi-paragraph winning pitch + strict niche validation
     prompt = f"""
-    Act as a high-end Freelance Acquisition Expert. Analyze this job: '{title}' for the '{niche}' niche.
-    1. EXTRACT: Company/Client Name (if visible), Core Requirements, Estimated Budget (if found), and Posting Date.
-    2. SCORE: 0-100 based on niche relevance.
-    3. PITCH: Write a winning 3-paragraph pitch. 
-       - Para 1: Hook based on their specific technical pain.
-       - Para 2: Value prop mentioning tools like SIEM, SOAR, or AI Agents.
-       - Para 3: Professional CTA.
-    Return ONLY JSON: {{"score": 95, "details": "Company: X | Req: Y | Budget: Z", "pitch": "FULL 3-PARA PITCH HERE"}}
+    Act as a Technical Recruiter and Sales Expert for a {niche} consultant.
+    Analyze the job: "{title}"
+    
+    1. VALIDATE: Is this job actually about {niche}? (e.g., SIEM, SOC, AI Agents). If it's unrelated (like Real Estate), set 'is_match' to false.
+    2. EXTRACT: Client Name, Core Technical Requirements, Budget/Price, and Post Date.
+    3. PITCH: Write a 3-paragraph winning pitch. 
+       - Para 1: Hook the client by identifying their technical problem.
+       - Para 2: Detail your specific solution using industry tools (Splunk, LangChain, etc).
+       - Para 3: Professional call to action.
+
+    Return ONLY JSON: {{"is_match": true, "score": 92, "details": "Company: ... | Budget: ...", "pitch": "..."}}
     """
     try:
         response = ai_model.generate_content(prompt)
-        return json.loads(response.text.replace('```json', '').replace('```', '').strip())
+        data = json.loads(response.text.replace('```json', '').replace('```', '').strip())
+        return data
     except:
-        return {"score": 80, "details": "Analysis Pending", "pitch": "Standard winning pitch for " + niche}
+        return {"is_match": False}
 
 def run_search(niche):
     client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
-    keywords = NICHE_MAP.get(niche, niche)
-    query = f"(site:upwork.com OR site:remoteok.com) ({keywords}) jobs posted last 48 hours"
+    # Requirement #6: 48 hour limit
+    query = f"site:upwork.com OR site:remoteok.com '{niche}' jobs posted last 48 hours"
     
     results = client.search(query=query, search_depth="advanced")
     session = Session()
+    
     for res in results.get('results', []):
-        if not session.query(Job).filter_by(id=res['url']).first():
+        url = res['url']
+        # Requirement #5: Duplicacy check (Check New, Applied, and Purged)
+        if not session.query(Job).filter_by(id=url).first():
             analysis = generate_pro_analysis(res['title'], niche)
-            session.add(Job(
-                id=res['url'], title=res['title'], details=analysis['details'],
-                score=analysis['score'], pitch=analysis['pitch'],
-                niche=niche, url=res['url']
-            ))
+            if analysis.get('is_match'):
+                session.add(Job(
+                    id=url, title=res['title'], details=analysis['details'],
+                    score=analysis['score'], pitch=analysis['pitch'],
+                    niche=niche, url=url
+                ))
+    
     session.commit()
     session.close()
 
