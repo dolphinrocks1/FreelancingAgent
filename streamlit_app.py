@@ -6,14 +6,12 @@ import sys
 from sqlalchemy import create_engine
 
 # --- Database Config ---
-# Ensure DATABASE_URL is set in your Streamlit Secrets
 engine = create_engine(os.getenv("DATABASE_URL"))
 
 st.set_page_config(page_title="Scout HQ Pro", page_icon="💼", layout="wide")
 
-# --- Sidebar: Niche Selection ---
-st.sidebar.header("Agent Controls")
-# This dropdown drives the entire logic
+# Sidebar: Service Type Selection
+st.sidebar.header("Service Configuration")
 target_niche = st.sidebar.selectbox(
     "Select Service Type", 
     [
@@ -25,42 +23,32 @@ target_niche = st.sidebar.selectbox(
     ]
 )
 
-if st.sidebar.button("🔍 Run Deep Scan"):
-    with st.sidebar.status(f"Agent searching for {target_niche}..."):
-        # CRITICAL: We pass target_niche as an argument to searcher.py
-        result = subprocess.run(
-            [sys.executable, "searcher.py", target_niche], 
-            capture_output=True, 
-            text=True
-        )
+if st.sidebar.button("🚀 Force Deep Scan"):
+    with st.sidebar.status(f"Hunting for {target_niche} roles..."):
+        # Pass the selection to the searcher
+        result = subprocess.run([sys.executable, "searcher.py", target_niche], capture_output=True, text=True)
         if result.returncode == 0:
-            st.sidebar.success(f"Scan for {target_niche} complete!")
             st.rerun()
         else:
-            st.sidebar.error("Searcher Failed")
+            st.error("Scan Failed")
             st.code(result.stderr)
 
-# --- Main Dashboard ---
-st.title(f"💼 Leads: {target_niche}")
+# Main Dashboard
+st.title(f"💼 {target_niche} Opportunities")
 
-# Load only the jobs matching the current selection
 try:
-    query = f"SELECT * FROM jobs WHERE niche = '{target_niche}' AND status != 'Applied' ORDER BY score DESC"
+    # Filter strictly by the selected niche
+    query = f"SELECT * FROM jobs WHERE niche = '{target_niche}' AND status = 'New' ORDER BY score DESC"
     df = pd.read_sql(query, engine)
-except Exception:
-    df = pd.DataFrame() # Handle case where table doesn't exist yet
+except:
+    df = pd.DataFrame()
 
 if not df.empty:
     for idx, row in df.iterrows():
         with st.container(border=True):
-            c1, c2 = st.columns([4, 1])
-            c1.subheader(row['title'])
-            st.write(f"**Source:** {row['url']}")
-            st.write(f"**AI Match Score:** {row['score']}%")
-            st.write(f"**AI Pitch:** {row['pitch']}")
-            
-            if c2.button("Mark Applied", key=f"app_{idx}"):
-                # Add your database update logic here (as discussed in previous step)
-                pass
+            st.subheader(row['title'])
+            st.write(f"**Found at:** {row['found_at']}")
+            st.write(f"**Pitch:** {row['pitch']}")
+            st.write(f"[Open Job Link]({row['url']})")
 else:
-    st.info(f"No leads found in the database for {target_niche}. Use the sidebar to scan.")
+    st.info(f"No active leads for {target_niche}. Initiate a scan to populate.")
