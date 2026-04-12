@@ -1,81 +1,77 @@
 import os
 import sys
-import pandas as pd
-import feedparser
+from sqlalchemy import create_engine, Column, String, Integer, Text, DateTime
+from sqlalchemy.ext.declarative import declarative_base
+from sqlalchemy.orm import sessionmaker
+from tavily import TavilyClient
+import google.generativeai as genai
 from datetime import datetime
-import pytz
+import json
 
-# Configuration
-IST = pytz.timezone('Asia/Kolkata')
-CSV_FILE = "data/jobs.csv"
+# --- Database Setup ---
+Base = declarative_base()
+class Job(Base):
+    __tablename__ = 'jobs'
+    id = Column(String, primary_key=True) # We'll use the URL as ID
+    title = Column(String)
+    url = Column(String)
+    score = Column(Integer)
+    niche = Column(String)
+    pitch = Column(Text)
+    status = Column(String, default="New") # New, Applied, Archived
+    found_at = Column(DateTime, default=datetime.utcnow)
 
-def load_and_repair_csv():
-    headers = ['id', 'title', 'source', 'weightage_score', 'service', 'is_genuine', 'draft', 'found_at']
-    if not os.path.exists(CSV_FILE):
-        df = pd.DataFrame(columns=headers)
-        os.makedirs("data", exist_ok=True)
-        df.to_csv(CSV_FILE, index=False)
-        return df
-    return pd.read_csv(CSV_FILE)
+# Connect to Neon Postgres
+engine = create_engine(os.getenv("DATABASE_URL"))
+Session = sessionmaker(bind=engine)
+Base.metadata.create_all(engine)
 
-def main():
-    service = sys.argv[1] if len(sys.argv) > 1 else "Cyber Security"
-    print(f"🚀 Deep-scanning for: {service}...")
-    
-    existing_df = load_and_repair_csv()
-    
-    # Platform Mapping: Use broader tags for Remote OK (no 'remote-' prefix)
-    rok_tags = {"Cyber Security": "security", "SOC": "security", "AI Agent Builder": "ai", "Software Developer": "python"}
-    
-    # Keyword Mapping: Simple '+' only to avoid 'InvalidURL' control character errors
-    kw_queries = {
-        "Cyber Security": "Cyber+Security+Analyst+Engineer",
-        "SOC": "SOC+Analyst+Security+Operations",
-        "AI Agent Builder": "Python+Automation+LLM",
-        "Software Developer": "Python+Backend"
-    }
-    
-    tag = rok_tags.get(service, "security")
-    query = kw_queries.get(service, "security")
-    
-    # Sources: Simplified to avoid RSS parser blocks
-    sources = [
-        f"https://remoteok.com/{tag}.rss", 
-        f"https://www.upwork.com/ab/feed/jobs/rss?q={query}",
-        f"https://www.freelancer.com/rss.xml?keyword={query}"
-    ]
+# --- AI Setup ---
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+ai_model = genai.GenerativeModel('gemini-1.5-flash')
 
-    new_found_leads = []
-    for rss_url in sources:
-        print(f"📡 Checking: {rss_url}")
-        feed = feedparser.parse(rss_url)
-        
-        for entry in feed.entries[:10]:
-            clean_link = str(entry.link).split('?')[0].strip()
+def get_ai_score(title, niche):
+    prompt = f"Score this job title '{title}' for a '{niche}' freelancer on a scale of 0-100. Return ONLY a JSON object: {{'score': 85, 'pitch': 'Short 2-sentence pitch'}}"
+    try:
+        response = ai_model.generate_content(prompt)
+        data = json.loads(response.text.replace('```json', '').replace('```', ''))
+        return data
+    except:
+        return {"score": 50, "pitch": "Interested in this role."}
+
+def run_search(niche):
+    client = TavilyClient(api_key=os.getenv("TAVILY_API_KEY"))
+    # Broad search across known job boards
+    query = f"site:upwork.com OR site:remoteok.com OR site:freelancer.com '{niche}' jobs posted in last 24 hours"
+    
+    print(f"🚀 Searching for {niche} leads...")
+    search_result = client.search(query=query, search_depth="advanced")
+    
+    session = Session()
+    new_count = 0
+    
+    for res in search_result.get('results', []):
+        url = res['url']
+        # Duplicate check
+        if not session.query(Job).filter_by(id=url).first():
+            analysis = get_ai_score(res['title'], niche)
             
-            # Duplicate check
-            if not existing_df.empty and clean_link in existing_df['id'].astype(str).values:
-                continue
-
-            # We accept all leads for now to verify the feed is working
-            new_found_leads.append({
-                "id": clean_link, 
-                "title": entry.title,
-                "source": clean_link,
-                "weightage_score": 75, # Static score for testing feed connectivity
-                "service": service,
-                "is_genuine": "New", 
-                "draft": "Interested in this role.",
-                "found_at": datetime.now(IST).strftime("%b %d, %I:%M %p")
-            })
-
-    if new_found_leads:
-        new_df = pd.DataFrame(new_found_leads)
-        final_df = pd.concat([existing_df, new_df]).drop_duplicates(subset='id')
-        final_df.to_csv(CSV_FILE, index=False)
-        print(f"✅ Success: Added {len(new_found_leads)} leads.")
-    else:
-        print("⚠️ No new leads found. Try a broader search term.")
+            if analysis['score'] >= 40:
+                new_job = Job(
+                    id=url,
+                    title=res['title'],
+                    url=url,
+                    score=analysis['score'],
+                    niche=niche,
+                    pitch=analysis['pitch']
+                )
+                session.add(new_job)
+                new_count += 1
+                
+    session.commit()
+    session.close()
+    print(f"✅ Found {new_count} new high-quality leads.")
 
 if __name__ == "__main__":
-    main()
+    niche_input = sys.argv[1] if len(sys.argv) > 1 else "Cyber Security"
+    run_search(niche_input)
