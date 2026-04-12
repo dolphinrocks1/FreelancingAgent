@@ -7,28 +7,30 @@ on:
         required: true
         default: 'Cyber Security'
   schedule:
+    # Runs every 3 hours as per your original configuration
     - cron: '0 */3 * * *'
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v3
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
       - name: Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: '3.11'
+
       - name: Install Dependencies
+        # Ensure your requirements.txt includes sqlalchemy and psycopg2-binary
         run: pip install -r requirements.txt
+
       - name: Run Searcher Agent
         env:
+          # These MUST match the names in your GitHub Repository Secrets
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          TAVILY_API_KEY: ${{ secrets.TAVILY_API_KEY }}
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-        # Pass the input niche to the script
+        # Logic: Use the manual input if provided, otherwise default to 'Cyber Security' for cron runs
         run: python searcher.py "${{ github.event.inputs.service_type || 'Cyber Security' }}"
-      - name: Commit and Push Results
-        run: |
-          git config --global user.name "Scout-Bot"
-          git config --global user.email "bot@scout.ai"
-          git add data/jobs.csv
-          git commit -m "[$(date +'%d %b %H:%M')] Automated Scout Run" || echo "No changes"
-          git push
