@@ -1,62 +1,66 @@
 import streamlit as st
 import pandas as pd
 import os
+import subprocess
 import sys
-from sqlalchemy import create_engine, Column, String, Integer, Text, DateTime
-from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy import create_engine
 
 # --- Database Config ---
+# Ensure DATABASE_URL is set in your Streamlit Secrets
 engine = create_engine(os.getenv("DATABASE_URL"))
-Base = declarative_base()
 
-class Job(Base):
-    __tablename__ = 'jobs'
-    id = Column(String, primary_key=True)
-    title = Column(String)
-    url = Column(String)
-    score = Column(Integer)
-    niche = Column(String)
-    pitch = Column(Text)
-    status = Column(String)
-    found_at = Column(DateTime)
+st.set_page_config(page_title="Scout HQ Pro", page_icon="💼", layout="wide")
 
-# --- Logic ---
-def mark_as_applied(job_id):
-    Session = sessionmaker(bind=engine)
-    session = Session()
-    session.query(Job).filter(Job.id == job_id).update({"status": "Applied"})
-    session.commit()
-    session.close()
+# --- Sidebar: Niche Selection ---
+st.sidebar.header("Agent Controls")
+# This dropdown drives the entire logic
+target_niche = st.sidebar.selectbox(
+    "Select Service Type", 
+    [
+        "Cyber Security", 
+        "AI in Cyber Security", 
+        "AI Agent Development", 
+        "Web Development", 
+        "Software Development"
+    ]
+)
 
-# --- UI ---
-st.set_page_config(page_title="Scout HQ Pro", layout="wide")
-st.title("💼 Scout HQ: Lead Dashboard")
+if st.sidebar.button("🔍 Run Deep Scan"):
+    with st.sidebar.status(f"Agent searching for {target_niche}..."):
+        # CRITICAL: We pass target_niche as an argument to searcher.py
+        result = subprocess.run(
+            [sys.executable, "searcher.py", target_niche], 
+            capture_output=True, 
+            text=True
+        )
+        if result.returncode == 0:
+            st.sidebar.success(f"Scan for {target_niche} complete!")
+            st.rerun()
+        else:
+            st.sidebar.error("Searcher Failed")
+            st.code(result.stderr)
 
-niche = st.sidebar.selectbox("Target Niche", ["Cyber Security", "SOC", "AI Agent Builder"])
+# --- Main Dashboard ---
+st.title(f"💼 Leads: {target_niche}")
 
-# Tabs for organization
-tab_new, tab_applied = st.tabs(["🆕 New Leads", "✅ Applied"])
+# Load only the jobs matching the current selection
+try:
+    query = f"SELECT * FROM jobs WHERE niche = '{target_niche}' AND status != 'Applied' ORDER BY score DESC"
+    df = pd.read_sql(query, engine)
+except Exception:
+    df = pd.DataFrame() # Handle case where table doesn't exist yet
 
-with tab_new:
-    query = f"SELECT * FROM jobs WHERE niche = '{niche}' AND status = 'New' ORDER BY score DESC"
-    df_new = pd.read_sql(query, engine)
-    
-    if not df_new.empty:
-        for _, row in df_new.iterrows():
-            with st.container(border=True):
-                c1, c2 = st.columns([5, 1])
-                c1.subheader(row['title'])
-                st.write(f"**AI Pitch:** {row['pitch']}")
-                
-                # Button triggers the callback and a rerun
-                if c2.button("Apply", key=f"btn_{row['id']}"):
-                    mark_as_applied(row['id'])
-                    st.rerun()
-    else:
-        st.info("No new leads.")
-
-with tab_applied:
-    query_applied = f"SELECT * FROM jobs WHERE niche = '{niche}' AND status = 'Applied'"
-    df_app = pd.read_sql(query_applied, engine)
-    st.table(df_app[['title', 'found_at']])
+if not df.empty:
+    for idx, row in df.iterrows():
+        with st.container(border=True):
+            c1, c2 = st.columns([4, 1])
+            c1.subheader(row['title'])
+            st.write(f"**Source:** {row['url']}")
+            st.write(f"**AI Match Score:** {row['score']}%")
+            st.write(f"**AI Pitch:** {row['pitch']}")
+            
+            if c2.button("Mark Applied", key=f"app_{idx}"):
+                # Add your database update logic here (as discussed in previous step)
+                pass
+else:
+    st.info(f"No leads found in the database for {target_niche}. Use the sidebar to scan.")
